@@ -1,63 +1,33 @@
-import Image from "next/image";
+import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-16">
+      <main className="flex w-full max-w-lg flex-col items-center gap-8 text-center">
+        <div className="flex flex-col gap-3">
+          <span className="text-sm font-medium text-zinc-500">트레이너를 위한 자세 분석 도구</span>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-900">체형·자세 스크리닝</h1>
+          <p className="text-zinc-600 leading-relaxed">
+            정면·측면 사진 한 장씩으로 어깨·골반 좌우 균형, 전방머리자세, 무릎 정렬 등을
+            <br className="hidden sm:block" />
+            검증된 자세 평가 방법론 기반으로 수치화해 드립니다.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <Link
+          href="/analyze"
+          className="rounded-full bg-zinc-900 px-8 py-4 text-white font-medium hover:bg-zinc-700 transition-colors"
+        >
+          측정 시작하기
+        </Link>
+
+        <div className="w-full rounded-xl border border-zinc-200 bg-white p-5 text-left text-sm text-zinc-600">
+          <p className="font-semibold text-zinc-800">사용 전 안내</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>이 도구는 의료기기가 아니며, 결과는 참고용 스크리닝 지표입니다.</li>
+            <li>동일한 촬영 거리·각도·복장으로 반복 측정할수록 변화 추적 정확도가 높아집니다.</li>
+            <li>촬영한 사진은 이 기기의 브라우저 안에서만 처리되며 서버로 전송되지 않습니다.</li>
+          </ul>
         </div>
       </main>
     </div>
