@@ -77,7 +77,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
 
   return (
     <div className="flex flex-col items-center gap-4 w-full">
-      <div className="relative w-full max-w-md aspect-[3/4] bg-black rounded-xl overflow-hidden">
+      <div className="relative w-full max-w-md aspect-[3/4] max-h-[58vh] bg-black rounded-xl overflow-hidden">
         <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
         <GuideOverlay view={view} />
         {error && (
