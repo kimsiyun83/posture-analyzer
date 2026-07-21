@@ -7,13 +7,18 @@ interface CameraCaptureProps {
   onCapture: (dataUrl: string, width: number, height: number) => void;
 }
 
+const TIMER_OPTIONS = [0, 3, 5] as const;
+
 export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceIndex, setDeviceIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -63,7 +68,13 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceIndex, devices.length]);
 
-  const handleCapture = () => {
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  const takeShot = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     const canvas = document.createElement("canvas");
@@ -73,6 +84,32 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     onCapture(canvas.toDataURL("image/jpeg", 0.92), canvas.width, canvas.height);
+  }, [onCapture]);
+
+  const handleCaptureClick = () => {
+    if (delay === 0) {
+      takeShot();
+      return;
+    }
+    let remaining = delay;
+    setCountdown(remaining);
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        setCountdown(null);
+        takeShot();
+      } else {
+        setCountdown(remaining);
+      }
+    }, 1000);
+  };
+
+  const handleCancelCountdown = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    setCountdown(null);
   };
 
   return (
@@ -80,26 +117,59 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
       <div className="relative w-full max-w-md aspect-[3/4] max-h-[58vh] bg-black rounded-xl overflow-hidden">
         <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
         <GuideOverlay view={view} />
+        {countdown !== null && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+            <span className="text-8xl font-bold text-white drop-shadow-lg">{countdown}</span>
+          </div>
+        )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-white bg-black/70">
             {error}
           </div>
         )}
       </div>
+
+      <div className="flex items-center gap-2 rounded-full bg-zinc-100 p-1">
+        {TIMER_OPTIONS.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => setDelay(opt)}
+            disabled={countdown !== null}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
+              delay === opt ? "bg-zinc-900 text-white" : "text-zinc-600"
+            }`}
+          >
+            {opt === 0 ? "즉시 촬영" : `${opt}초 타이머`}
+          </button>
+        ))}
+      </div>
+
       <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={handleCapture}
-          disabled={!ready}
-          className="rounded-full bg-zinc-900 px-6 py-3 text-white font-medium disabled:opacity-40"
-        >
-          촬영하기
-        </button>
+        {countdown !== null ? (
+          <button
+            type="button"
+            onClick={handleCancelCountdown}
+            className="rounded-full border border-zinc-300 px-6 py-3 text-sm font-medium"
+          >
+            취소
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleCaptureClick}
+            disabled={!ready}
+            className="rounded-full bg-zinc-900 px-6 py-3 text-white font-medium disabled:opacity-40"
+          >
+            촬영하기
+          </button>
+        )}
         {devices.length > 1 && (
           <button
             type="button"
             onClick={() => setDeviceIndex((i) => i + 1)}
-            className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium"
+            disabled={countdown !== null}
+            className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium disabled:opacity-40"
           >
             카메라 전환
           </button>
