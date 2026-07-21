@@ -14,7 +14,8 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [deviceIndex, setDeviceIndex] = useState(0);
+  const [requestedDeviceId, setRequestedDeviceId] = useState<string | null>(null);
+  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
@@ -34,10 +35,9 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
       stopStream();
       try {
         const constraints: MediaStreamConstraints = {
-          video:
-            devices.length > 0
-              ? { deviceId: { exact: devices[deviceIndex % devices.length].deviceId } }
-              : { facingMode: { ideal: "environment" } },
+          video: requestedDeviceId
+            ? { deviceId: { exact: requestedDeviceId } }
+            : { facingMode: { ideal: "environment" } },
           audio: false,
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -51,9 +51,13 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
           await videoRef.current.play();
         }
         setReady(true);
-        if (devices.length === 0) {
-          const list = await navigator.mediaDevices.enumerateDevices();
-          if (!cancelled) setDevices(list.filter((d) => d.kind === "videoinput"));
+        setActiveDeviceId(stream.getVideoTracks()[0]?.getSettings().deviceId ?? null);
+        // Device labels/ids are only populated once permission is granted; enumerate lazily
+        // and only adopt the result if we don't already have a list (avoids re-triggering
+        // this effect via a `devices.length` dependency every time the list is (re)filled).
+        const list = await navigator.mediaDevices.enumerateDevices();
+        if (!cancelled) {
+          setDevices((prev) => (prev.length > 0 ? prev : list.filter((d) => d.kind === "videoinput")));
         }
       } catch {
         if (!cancelled) setError("카메라에 접근할 수 없습니다. 브라우저 권한을 확인해 주세요.");
@@ -66,7 +70,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
       stopStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceIndex, devices.length]);
+  }, [requestedDeviceId]);
 
   useEffect(() => {
     return () => {
@@ -110,6 +114,13 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
     setCountdown(null);
+  };
+
+  const handleSwitchCamera = () => {
+    if (devices.length < 2) return;
+    const currentIdx = devices.findIndex((d) => d.deviceId === activeDeviceId);
+    const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % devices.length;
+    setRequestedDeviceId(devices[nextIdx].deviceId);
   };
 
   return (
@@ -167,8 +178,8 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
         {devices.length > 1 && (
           <button
             type="button"
-            onClick={() => setDeviceIndex((i) => i + 1)}
-            disabled={countdown !== null}
+            onClick={handleSwitchCamera}
+            disabled={countdown !== null || !ready}
             className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium disabled:opacity-40"
           >
             카메라 전환

@@ -83,16 +83,26 @@ export default function AnalyzePage() {
         <StepIndicator step={step} />
       </header>
 
-      {step === "front-capture" && (
-        <Section title="1. 정면 사진 촬영" desc="양팔을 자연스럽게 내리고 정면을 보고 서 주세요.">
-          <CameraCapture view="front" onCapture={handleFrontCapture} />
-        </Section>
-      )}
-
-      {step === "side-capture" && (
-        <Section title="2. 측면 사진 촬영" desc="몸의 옆면(귀·어깨·골반·무릎·발목)이 카메라에 일직선으로 보이게 서 주세요.">
-          <CameraCapture view="side" onCapture={handleSideCapture} />
-        </Section>
+      {/* Kept mounted across front-capture -> analyzing -> side-capture so the camera
+          stream (and permission grant) survives the whole flow instead of being torn
+          down and reacquired between the two shots. Only unmounts once the side photo
+          is captured (moving on to results) or on error. */}
+      {!sideShot && step !== "error" && (
+        <div className={step === "analyzing" ? "hidden" : "contents"}>
+          <Section
+            title={step === "side-capture" ? "2. 측면 사진 촬영" : "1. 정면 사진 촬영"}
+            desc={
+              step === "side-capture"
+                ? "몸의 옆면(귀·어깨·골반·무릎·발목)이 카메라에 일직선으로 보이게 서 주세요."
+                : "양팔을 자연스럽게 내리고 정면을 보고 서 주세요."
+            }
+          >
+            <CameraCapture
+              view={step === "side-capture" ? "side" : "front"}
+              onCapture={step === "side-capture" ? handleSideCapture : handleFrontCapture}
+            />
+          </Section>
+        </div>
       )}
 
       {step === "analyzing" && (
