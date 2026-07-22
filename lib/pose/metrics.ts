@@ -177,13 +177,13 @@ export function detectFacing(lm: PoseLandmarks): Facing {
 
 export function computeSideMetrics(lm: PoseLandmarks): SideResult {
   const facing = detectFacing(lm);
-  const use = (leftIdx: number, rightIdx: number) => (facing === "left" ? lm[leftIdx] : lm[rightIdx]);
+  const pick = (leftIdx: number, rightIdx: number) => (facing === "left" ? lm[leftIdx] : lm[rightIdx]);
 
-  const ear = use(LM.leftEar, LM.rightEar);
-  const shoulder = use(LM.leftShoulder, LM.rightShoulder);
-  const hip = use(LM.leftHip, LM.rightHip);
-  const knee = use(LM.leftKnee, LM.rightKnee);
-  const ankle = use(LM.leftAnkle, LM.rightAnkle);
+  const ear = pick(LM.leftEar, LM.rightEar);
+  const shoulder = pick(LM.leftShoulder, LM.rightShoulder);
+  const hip = pick(LM.leftHip, LM.rightHip);
+  const knee = pick(LM.leftKnee, LM.rightKnee);
+  const ankle = pick(LM.leftAnkle, LM.rightAnkle);
 
   // Forward Head Angle: angle at the shoulder between an anterior horizontal ray and the
   // ray toward the ear. A practical, marker-less proxy for the craniovertebral angle (CVA)

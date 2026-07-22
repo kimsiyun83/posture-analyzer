@@ -240,6 +240,28 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
+/**
+ * Opens a blob directly instead of forcing a "download". The `download` attribute on
+ * blob: URLs is unreliable across mobile browsers and in-app WebViews (KakaoTalk,
+ * Naver, etc.) — it can silently do nothing, or get stuck at "downloading" forever.
+ * Opening in a new tab is far more broadly supported: the browser either downloads it
+ * automatically, or displays it so the user can save via long-press / the share icon.
+ *
+ * Must use a blob: URL, not a data: URL — Chrome (and others) silently block
+ * `window.open()` navigation to data: URLs as an anti-phishing measure, so a data URI
+ * here would look like it works (no error) while doing absolutely nothing.
+ */
+export function openBlob(blob: Blob): boolean {
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  if (win) return true;
+  // Popup blocked (shouldn't normally happen inside a direct click handler) — fall
+  // back to navigating the current tab. State is recoverable via sessionStorage.
+  window.location.href = url;
+  return false;
+}
+
 export function canShareFiles(file: File): boolean {
   const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
   return typeof nav.canShare === "function" && nav.canShare({ files: [file] });
@@ -257,7 +279,7 @@ export async function shareBlob(blob: Blob, filename: string): Promise<boolean> 
   return true;
 }
 
-export async function canvasToPdfBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+async function buildPdf(canvas: HTMLCanvasElement) {
   const { jsPDF } = await import("jspdf");
   const imgData = canvas.toDataURL("image/jpeg", 0.92);
   const PX_TO_MM = 25.4 / 96;
@@ -269,5 +291,10 @@ export async function canvasToPdfBlob(canvas: HTMLCanvasElement): Promise<Blob> 
     format: [widthMm, heightMm],
   });
   pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
+  return pdf;
+}
+
+export async function canvasToPdfBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  const pdf = await buildPdf(canvas);
   return pdf.output("blob");
 }

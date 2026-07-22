@@ -10,13 +10,61 @@ import { getPoseLandmarker } from "@/lib/pose/model";
 import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
 import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
-import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, downloadBlob, shareBlob } from "@/lib/report";
+import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, openBlob, shareBlob } from "@/lib/report";
 
 type Step = "select-program" | "front-capture" | "side-capture" | "analyzing" | "results" | "error";
 
 interface Shot {
   dataUrl: string;
   landmarks: PoseLandmarks;
+}
+
+// Persisted so an accidental back-navigation or reload doesn't wipe photos already
+// captured — restored on mount, cleared on an explicit reset. Only the small,
+// JSON-serializable pieces are kept (not the report canvas/blob, which rebuild
+// automatically once results are restored).
+const STORAGE_KEY = "posture-analyzer:session-v1";
+
+interface PersistedSession {
+  programType: ProgramType | null;
+  frontShot: Shot | null;
+  sideShot: Shot | null;
+  frontResult: FrontResult | null;
+  sideResult: SideResult | null;
+}
+
+// Derived rather than stored directly: transient steps ("analyzing", "error") would
+// otherwise restore into a dead-end with no in-flight work to resolve them.
+function deriveStep(s: PersistedSession): Step {
+  if (s.frontShot && s.frontResult && s.sideShot && s.sideResult && s.programType) return "results";
+  if (s.frontShot && s.frontResult && s.programType) return "side-capture";
+  if (s.programType) return "front-capture";
+  return "select-program";
+}
+
+function loadPersistedSession(): PersistedSession | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedSession(data: PersistedSession) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // storage full/unavailable (e.g. private browsing) — not critical, just skip
+  }
+}
+
+function clearPersistedSession() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export default function AnalyzePage() {
@@ -40,6 +88,33 @@ export default function AnalyzePage() {
   const [shareState, setShareState] = useState<"idle" | "sharing" | "error">("idle");
   const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Restore in-progress work once on mount (covers back/forward navigation and
+  // accidental reloads — this component fully remounts in both cases, wiping
+  // in-memory state, but sessionStorage survives). This has to run as an effect
+  // rather than a useState lazy initializer: sessionStorage isn't available during
+  // Next's server render, so seeding state from it synchronously would make the
+  // server-rendered HTML and the client's first render disagree (hydration error).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const saved = loadPersistedSession();
+    if (!saved) return;
+    const restoredStep = deriveStep(saved);
+    if (restoredStep === "select-program") return;
+    setProgramType(saved.programType);
+    setFrontShot(saved.frontShot);
+    setSideShot(saved.sideShot);
+    setFrontResult(saved.frontResult);
+    setSideResult(saved.sideResult);
+    setStep(restoredStep);
+    if (restoredStep === "front-capture" || restoredStep === "side-capture") setCameraActivated(true);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (step === "select-program") return;
+    savePersistedSession({ programType, frontShot, sideShot, frontResult, sideResult });
+  }, [step, programType, frontShot, sideShot, frontResult, sideResult]);
 
   async function detect(dataUrl: string): Promise<PoseLandmarks> {
     const landmarker = await getPoseLandmarker();
@@ -97,6 +172,7 @@ export default function AnalyzePage() {
     setShareState("idle");
     setActionErrorMsg(null);
     reportCanvasRef.current = null;
+    clearPersistedSession();
     setStep("select-program");
   }
 
@@ -129,7 +205,6 @@ export default function AnalyzePage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, frontShot, sideShot, frontResult, sideResult, programType]);
 
   async function handleShare() {
@@ -138,7 +213,7 @@ export default function AnalyzePage() {
     setActionErrorMsg(null);
     try {
       const shared = await shareBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
-      if (!shared) downloadBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
+      if (!shared) openBlob(reportPngBlob);
       setShareState("idle");
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
@@ -150,18 +225,18 @@ export default function AnalyzePage() {
     }
   }
 
-  function handleDownloadPng() {
+  function handleOpenPng() {
     if (!reportPngBlob) return;
-    downloadBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
+    openBlob(reportPngBlob);
   }
 
-  async function handleDownloadPdf() {
+  async function handleOpenPdf() {
     if (!reportCanvasRef.current) return;
     setPdfState("building");
     setActionErrorMsg(null);
     try {
       const pdfBlob = await canvasToPdfBlob(reportCanvasRef.current);
-      downloadBlob(pdfBlob, `posture-report-${Date.now()}.pdf`);
+      openBlob(pdfBlob);
       setPdfState("idle");
     } catch (e) {
       setActionErrorMsg(e instanceof Error ? e.message : "PDF 생성에 실패했습니다.");
@@ -286,8 +361,8 @@ export default function AnalyzePage() {
               pdfState={pdfState}
               actionErrorMsg={actionErrorMsg}
               onShare={handleShare}
-              onDownloadPng={handleDownloadPng}
-              onDownloadPdf={handleDownloadPdf}
+              onOpenPng={handleOpenPng}
+              onOpenPdf={handleOpenPdf}
               onClose={() => setShowReportModal(false)}
             />
           )}
@@ -305,8 +380,8 @@ interface ReportModalProps {
   pdfState: "idle" | "building" | "error";
   actionErrorMsg: string | null;
   onShare: () => void;
-  onDownloadPng: () => void;
-  onDownloadPdf: () => void;
+  onOpenPng: () => void;
+  onOpenPdf: () => void;
   onClose: () => void;
 }
 
@@ -318,8 +393,8 @@ function ReportModal({
   pdfState,
   actionErrorMsg,
   onShare,
-  onDownloadPng,
-  onDownloadPdf,
+  onOpenPng,
+  onOpenPdf,
   onClose,
 }: ReportModalProps) {
   return (
@@ -339,7 +414,8 @@ function ReportModal({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={dataUrl} alt="체형·자세 분석 리포트" className="w-full rounded-lg border border-zinc-200" />
               <p className="mt-2 text-center text-xs text-zinc-500">
-                저장 버튼이 동작하지 않으면 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택해 주세요.
+                아래 버튼이 잘 안 되면, 위 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택해 주세요.
+                가장 확실한 저장 방법입니다.
               </p>
             </>
           )}
@@ -358,18 +434,18 @@ function ReportModal({
               </button>
             )}
             <button
-              onClick={onDownloadPng}
+              onClick={onOpenPng}
               disabled={!dataUrl}
               className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
             >
-              이미지 다운로드
+              이미지 새 탭에서 열기
             </button>
             <button
-              onClick={onDownloadPdf}
+              onClick={onOpenPdf}
               disabled={!dataUrl || pdfState === "building"}
               className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
             >
-              {pdfState === "building" ? "PDF 생성 중…" : "PDF 다운로드"}
+              {pdfState === "building" ? "PDF 생성 중…" : "PDF 새 탭에서 열기"}
             </button>
           </div>
         </div>
