@@ -226,41 +226,19 @@ export function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoking immediately after click() races the browser's (often async, especially
-  // on mobile) read of the blob: URL — the download can be cut off mid-transfer and
-  // sit stuck at "downloading" forever. Give it time to actually finish reading.
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
-}
-
-/**
- * Opens a blob directly instead of forcing a "download". The `download` attribute on
- * blob: URLs is unreliable across mobile browsers and in-app WebViews (KakaoTalk,
- * Naver, etc.) — it can silently do nothing, or get stuck at "downloading" forever.
- * Opening in a new tab is far more broadly supported: the browser either downloads it
- * automatically, or displays it so the user can save via long-press / the share icon.
- *
- * Must use a blob: URL, not a data: URL — Chrome (and others) silently block
- * `window.open()` navigation to data: URLs as an anti-phishing measure, so a data URI
- * here would look like it works (no error) while doing absolutely nothing.
- */
-export function openBlob(blob: Blob): boolean {
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-  if (win) return true;
-  // Popup blocked (shouldn't normally happen inside a direct click handler) — fall
-  // back to navigating the current tab. State is recoverable via sessionStorage.
-  window.location.href = url;
-  return false;
-}
+// Deliberately NOT using <a download> (blob: URLs) or window.open() (blob: or data:)
+// here. Both were tried and both broke in the field:
+//   - `download` attribute on blob: URLs: silently does nothing / gets stuck at
+//     "downloading" forever on several mobile browsers and in-app WebViews.
+//   - window.open(dataUrl): Chrome silently blocks top-level navigation to data:
+//     URLs as an anti-phishing measure — no error, just nothing happens.
+//   - window.open(blobUrl): works on desktop, but renders a blank/black tab on iOS
+//     Safari — a long-standing WebKit bug where blob: URLs don't resolve in a new
+//     browsing context.
+// The one thing that reliably works everywhere is rendering the image inline in the
+// current document (an <img> the user can long-press) plus the Web Share API when
+// available (see shareBlob below) — both stay within the page that created the blob,
+// so neither of the above cross-context failure modes applies.
 
 export function canShareFiles(file: File): boolean {
   const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };

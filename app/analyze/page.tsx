@@ -10,7 +10,7 @@ import { getPoseLandmarker } from "@/lib/pose/model";
 import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
 import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
-import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, openBlob, shareBlob } from "@/lib/report";
+import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, shareBlob } from "@/lib/report";
 
 type Step = "select-program" | "front-capture" | "side-capture" | "analyzing" | "results" | "error";
 
@@ -82,10 +82,11 @@ export default function AnalyzePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reportDataUrl, setReportDataUrl] = useState<string | null>(null);
   const [reportPngBlob, setReportPngBlob] = useState<Blob | null>(null);
+  const [reportPdfBlob, setReportPdfBlob] = useState<Blob | null>(null);
   const [reportBuildError, setReportBuildError] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [pdfState, setPdfState] = useState<"idle" | "building" | "error">("idle");
-  const [shareState, setShareState] = useState<"idle" | "sharing" | "error">("idle");
+  const [pngShareState, setPngShareState] = useState<"idle" | "sharing" | "error">("idle");
+  const [pdfShareState, setPdfShareState] = useState<"idle" | "sharing" | "error">("idle");
   const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
   const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -166,20 +167,22 @@ export default function AnalyzePage() {
     setProgramType(null);
     setReportDataUrl(null);
     setReportPngBlob(null);
+    setReportPdfBlob(null);
     setReportBuildError(null);
     setShowReportModal(false);
-    setPdfState("idle");
-    setShareState("idle");
+    setPngShareState("idle");
+    setPdfShareState("idle");
     setActionErrorMsg(null);
     reportCanvasRef.current = null;
     clearPersistedSession();
     setStep("select-program");
   }
 
-  // Build the report image proactively as soon as results are ready, rather than
-  // inside the save button's click handler. navigator.share() must fire close to
-  // the user gesture that triggered it — Safari revokes the permission if too much
-  // async work (loading two photos, drawing the whole composite) happens first.
+  // Build the report image (and PDF) proactively as soon as results are ready,
+  // rather than inside a button's click handler. navigator.share() must fire close
+  // to the user gesture that triggered it — Safari revokes the permission if too
+  // much async work (loading two photos, drawing the composite, encoding a PDF)
+  // happens first.
   useEffect(() => {
     if (step !== "results" || !frontShot || !sideShot || !frontResult || !sideResult || !programType) return;
     let cancelled = false;
@@ -196,8 +199,10 @@ export default function AnalyzePage() {
         if (cancelled) return;
         reportCanvasRef.current = canvas;
         setReportDataUrl(canvas.toDataURL("image/png"));
-        const blob = await canvasToPngBlob(canvas);
-        if (!cancelled) setReportPngBlob(blob);
+        const pngBlob = await canvasToPngBlob(canvas);
+        if (!cancelled) setReportPngBlob(pngBlob);
+        const pdfBlob = await canvasToPdfBlob(canvas);
+        if (!cancelled) setReportPdfBlob(pdfBlob);
       } catch (e) {
         if (!cancelled) setReportBuildError(e instanceof Error ? e.message : "리포트 생성에 실패했습니다.");
       }
@@ -207,40 +212,43 @@ export default function AnalyzePage() {
     };
   }, [step, frontShot, sideShot, frontResult, sideResult, programType]);
 
-  async function handleShare() {
+  async function handleSharePng() {
     if (!reportPngBlob) return;
-    setShareState("sharing");
+    setPngShareState("sharing");
     setActionErrorMsg(null);
     try {
       const shared = await shareBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
-      if (!shared) openBlob(reportPngBlob);
-      setShareState("idle");
+      if (!shared) {
+        setActionErrorMsg("이 브라우저에서는 공유가 지원되지 않습니다. 위 이미지를 길게 눌러 저장해 주세요.");
+      }
+      setPngShareState("idle");
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
-        setShareState("idle");
+        setPngShareState("idle");
         return;
       }
-      setActionErrorMsg(e instanceof Error ? e.message : "공유에 실패했습니다. 아래 이미지를 길게 눌러 저장해 주세요.");
-      setShareState("error");
+      setActionErrorMsg(e instanceof Error ? e.message : "공유에 실패했습니다. 위 이미지를 길게 눌러 저장해 주세요.");
+      setPngShareState("error");
     }
   }
 
-  function handleOpenPng() {
-    if (!reportPngBlob) return;
-    openBlob(reportPngBlob);
-  }
-
-  async function handleOpenPdf() {
-    if (!reportCanvasRef.current) return;
-    setPdfState("building");
+  async function handleSharePdf() {
+    if (!reportPdfBlob) return;
+    setPdfShareState("sharing");
     setActionErrorMsg(null);
     try {
-      const pdfBlob = await canvasToPdfBlob(reportCanvasRef.current);
-      openBlob(pdfBlob);
-      setPdfState("idle");
+      const shared = await shareBlob(reportPdfBlob, `posture-report-${Date.now()}.pdf`);
+      if (!shared) {
+        setActionErrorMsg("이 브라우저에서는 PDF 공유가 지원되지 않습니다. 이미지 저장을 이용해 주세요.");
+      }
+      setPdfShareState("idle");
     } catch (e) {
-      setActionErrorMsg(e instanceof Error ? e.message : "PDF 생성에 실패했습니다.");
-      setPdfState("error");
+      if (e instanceof Error && e.name === "AbortError") {
+        setPdfShareState("idle");
+        return;
+      }
+      setActionErrorMsg(e instanceof Error ? e.message : "PDF 공유에 실패했습니다.");
+      setPdfShareState("error");
     }
   }
 
@@ -356,13 +364,14 @@ export default function AnalyzePage() {
             <ReportModal
               dataUrl={reportDataUrl}
               buildError={reportBuildError}
-              canShare={!!reportPngBlob && typeof navigator !== "undefined" && typeof navigator.share === "function"}
-              shareState={shareState}
-              pdfState={pdfState}
+              canShare={typeof navigator !== "undefined" && typeof navigator.share === "function"}
+              pngReady={!!reportPngBlob}
+              pdfReady={!!reportPdfBlob}
+              pngShareState={pngShareState}
+              pdfShareState={pdfShareState}
               actionErrorMsg={actionErrorMsg}
-              onShare={handleShare}
-              onOpenPng={handleOpenPng}
-              onOpenPdf={handleOpenPdf}
+              onSharePng={handleSharePng}
+              onSharePdf={handleSharePdf}
               onClose={() => setShowReportModal(false)}
             />
           )}
@@ -376,12 +385,13 @@ interface ReportModalProps {
   dataUrl: string | null;
   buildError: string | null;
   canShare: boolean;
-  shareState: "idle" | "sharing" | "error";
-  pdfState: "idle" | "building" | "error";
+  pngReady: boolean;
+  pdfReady: boolean;
+  pngShareState: "idle" | "sharing" | "error";
+  pdfShareState: "idle" | "sharing" | "error";
   actionErrorMsg: string | null;
-  onShare: () => void;
-  onOpenPng: () => void;
-  onOpenPdf: () => void;
+  onSharePng: () => void;
+  onSharePdf: () => void;
   onClose: () => void;
 }
 
@@ -389,12 +399,13 @@ function ReportModal({
   dataUrl,
   buildError,
   canShare,
-  shareState,
-  pdfState,
+  pngReady,
+  pdfReady,
+  pngShareState,
+  pdfShareState,
   actionErrorMsg,
-  onShare,
-  onOpenPng,
-  onOpenPdf,
+  onSharePng,
+  onSharePdf,
   onClose,
 }: ReportModalProps) {
   return (
@@ -411,11 +422,14 @@ function ReportModal({
           {buildError && <p className="text-sm text-rose-600">리포트 생성에 실패했습니다: {buildError}</p>}
           {dataUrl && (
             <>
+              {/* 저장의 가장 확실한 경로: 새 탭/다운로드 링크는 기기마다 깨지는 경우가 많아
+                  (data: URL은 크롬이 새 탭 이동을 차단, blob: URL은 iOS Safari에서 새 탭이
+                  검정 화면으로 뜨는 버그가 있음), 같은 화면에 이미지를 직접 보여주고 길게 눌러
+                  저장하게 하는 방식이 기기·브라우저를 가장 덜 타는 방법입니다. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={dataUrl} alt="체형·자세 분석 리포트" className="w-full rounded-lg border border-zinc-200" />
               <p className="mt-2 text-center text-xs text-zinc-500">
-                아래 버튼이 잘 안 되면, 위 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택해 주세요.
-                가장 확실한 저장 방법입니다.
+                위 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택하면 사진첩에 저장됩니다.
               </p>
             </>
           )}
@@ -423,30 +437,26 @@ function ReportModal({
 
         <div className="flex flex-col gap-2 border-t border-zinc-200 p-4">
           {actionErrorMsg && <p className="text-sm text-rose-600">{actionErrorMsg}</p>}
+          {!canShare && <p className="text-xs text-zinc-500">이 브라우저는 공유하기를 지원하지 않습니다 — 위 이미지를 길게 눌러 저장해 주세요.</p>}
           <div className="flex flex-wrap justify-center gap-2">
             {canShare && (
               <button
-                onClick={onShare}
-                disabled={shareState === "sharing"}
+                onClick={onSharePng}
+                disabled={!pngReady || pngShareState === "sharing"}
                 className="rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
               >
-                {shareState === "sharing" ? "공유 중…" : "공유하기 / 사진첩 저장"}
+                {pngShareState === "sharing" ? "공유 중…" : "이미지 공유하기"}
               </button>
             )}
-            <button
-              onClick={onOpenPng}
-              disabled={!dataUrl}
-              className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-            >
-              이미지 새 탭에서 열기
-            </button>
-            <button
-              onClick={onOpenPdf}
-              disabled={!dataUrl || pdfState === "building"}
-              className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-            >
-              {pdfState === "building" ? "PDF 생성 중…" : "PDF 새 탭에서 열기"}
-            </button>
+            {canShare && (
+              <button
+                onClick={onSharePdf}
+                disabled={!pdfReady || pdfShareState === "sharing"}
+                className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+              >
+                {pdfShareState === "sharing" ? "공유 중…" : !pdfReady ? "PDF 준비 중…" : "PDF 공유하기"}
+              </button>
+            )}
           </div>
         </div>
       </div>
