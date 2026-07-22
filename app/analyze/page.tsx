@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
@@ -10,7 +10,7 @@ import { getPoseLandmarker } from "@/lib/pose/model";
 import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
 import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
-import { buildReportCanvas, shareOrDownloadCanvas } from "@/lib/report";
+import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, downloadBlob, shareBlob } from "@/lib/report";
 
 type Step = "select-program" | "front-capture" | "side-capture" | "analyzing" | "results" | "error";
 
@@ -27,8 +27,14 @@ export default function AnalyzePage() {
   const [frontResult, setFrontResult] = useState<FrontResult | null>(null);
   const [sideResult, setSideResult] = useState<SideResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
-  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+  const [reportDataUrl, setReportDataUrl] = useState<string | null>(null);
+  const [reportPngBlob, setReportPngBlob] = useState<Blob | null>(null);
+  const [reportBuildError, setReportBuildError] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [pdfState, setPdfState] = useState<"idle" | "building" | "error">("idle");
+  const [shareState, setShareState] = useState<"idle" | "sharing" | "error">("idle");
+  const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
+  const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   async function detect(dataUrl: string): Promise<PoseLandmarks> {
     const landmarker = await getPoseLandmarker();
@@ -78,34 +84,83 @@ export default function AnalyzePage() {
     setSideResult(null);
     setErrorMsg(null);
     setProgramType(null);
-    setSaveState("idle");
-    setSaveErrorMsg(null);
+    setReportDataUrl(null);
+    setReportPngBlob(null);
+    setReportBuildError(null);
+    setShowReportModal(false);
+    setPdfState("idle");
+    setShareState("idle");
+    setActionErrorMsg(null);
+    reportCanvasRef.current = null;
     setStep("select-program");
   }
 
-  async function handleSaveReport() {
-    if (!frontShot || !sideShot || !frontResult || !sideResult || !programType) return;
-    setSaveState("saving");
-    setSaveErrorMsg(null);
+  // Build the report image proactively as soon as results are ready, rather than
+  // inside the save button's click handler. navigator.share() must fire close to
+  // the user gesture that triggered it — Safari revokes the permission if too much
+  // async work (loading two photos, drawing the whole composite) happens first.
+  useEffect(() => {
+    if (step !== "results" || !frontShot || !sideShot || !frontResult || !sideResult || !programType) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const canvas = await buildReportCanvas({
+          frontShot,
+          sideShot,
+          frontResult,
+          sideResult,
+          programType,
+          dateLabel: new Date().toLocaleDateString("ko-KR"),
+        });
+        if (cancelled) return;
+        reportCanvasRef.current = canvas;
+        setReportDataUrl(canvas.toDataURL("image/png"));
+        const blob = await canvasToPngBlob(canvas);
+        if (!cancelled) setReportPngBlob(blob);
+      } catch (e) {
+        if (!cancelled) setReportBuildError(e instanceof Error ? e.message : "리포트 생성에 실패했습니다.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, frontShot, sideShot, frontResult, sideResult, programType]);
+
+  async function handleShare() {
+    if (!reportPngBlob) return;
+    setShareState("sharing");
+    setActionErrorMsg(null);
     try {
-      const canvas = await buildReportCanvas({
-        frontShot,
-        sideShot,
-        frontResult,
-        sideResult,
-        programType,
-        dateLabel: new Date().toLocaleDateString("ko-KR"),
-      });
-      await shareOrDownloadCanvas(canvas, `posture-report-${Date.now()}.png`);
-      setSaveState("idle");
+      const shared = await shareBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
+      if (!shared) downloadBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
+      setShareState("idle");
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
-        // user cancelled the native share sheet — not a real error
-        setSaveState("idle");
+        setShareState("idle");
         return;
       }
-      setSaveErrorMsg(e instanceof Error ? e.message : "리포트 저장에 실패했습니다.");
-      setSaveState("error");
+      setActionErrorMsg(e instanceof Error ? e.message : "공유에 실패했습니다. 아래 이미지를 길게 눌러 저장해 주세요.");
+      setShareState("error");
+    }
+  }
+
+  function handleDownloadPng() {
+    if (!reportPngBlob) return;
+    downloadBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
+  }
+
+  async function handleDownloadPdf() {
+    if (!reportCanvasRef.current) return;
+    setPdfState("building");
+    setActionErrorMsg(null);
+    try {
+      const pdfBlob = await canvasToPdfBlob(reportCanvasRef.current);
+      downloadBlob(pdfBlob, `posture-report-${Date.now()}.pdf`);
+      setPdfState("idle");
+    } catch (e) {
+      setActionErrorMsg(e instanceof Error ? e.message : "PDF 생성에 실패했습니다.");
+      setPdfState("error");
     }
   }
 
@@ -202,23 +257,116 @@ export default function AnalyzePage() {
           <div className="flex flex-col items-center gap-2 print:hidden">
             <div className="flex flex-wrap justify-center gap-3">
               <button
-                onClick={handleSaveReport}
-                disabled={saveState === "saving"}
+                onClick={() => setShowReportModal(true)}
+                disabled={!reportDataUrl && !reportBuildError}
                 className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
-                {saveState === "saving" ? "저장 중…" : "사진첩에 리포트 저장"}
-              </button>
-              <button onClick={() => window.print()} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
-                인쇄/PDF
+                {reportDataUrl || reportBuildError ? "리포트 보기·저장" : "리포트 준비 중…"}
               </button>
               <button onClick={reset} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
                 새로 측정하기
               </button>
             </div>
-            {saveState === "error" && saveErrorMsg && <p className="text-sm text-rose-600">{saveErrorMsg}</p>}
+            {reportBuildError && <p className="text-sm text-rose-600">리포트 생성 실패: {reportBuildError}</p>}
           </div>
+
+          {showReportModal && (
+            <ReportModal
+              dataUrl={reportDataUrl}
+              buildError={reportBuildError}
+              canShare={!!reportPngBlob && typeof navigator !== "undefined" && typeof navigator.share === "function"}
+              shareState={shareState}
+              pdfState={pdfState}
+              actionErrorMsg={actionErrorMsg}
+              onShare={handleShare}
+              onDownloadPng={handleDownloadPng}
+              onDownloadPdf={handleDownloadPdf}
+              onClose={() => setShowReportModal(false)}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+interface ReportModalProps {
+  dataUrl: string | null;
+  buildError: string | null;
+  canShare: boolean;
+  shareState: "idle" | "sharing" | "error";
+  pdfState: "idle" | "building" | "error";
+  actionErrorMsg: string | null;
+  onShare: () => void;
+  onDownloadPng: () => void;
+  onDownloadPdf: () => void;
+  onClose: () => void;
+}
+
+function ReportModal({
+  dataUrl,
+  buildError,
+  canShare,
+  shareState,
+  pdfState,
+  actionErrorMsg,
+  onShare,
+  onDownloadPng,
+  onDownloadPdf,
+  onClose,
+}: ReportModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 p-4">
+      <div className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-xl bg-white">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+          <span className="font-semibold text-zinc-900">리포트 저장</span>
+          <button onClick={onClose} className="text-sm text-zinc-500">
+            닫기
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {buildError && <p className="text-sm text-rose-600">리포트 생성에 실패했습니다: {buildError}</p>}
+          {dataUrl && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={dataUrl} alt="체형·자세 분석 리포트" className="w-full rounded-lg border border-zinc-200" />
+              <p className="mt-2 text-center text-xs text-zinc-500">
+                저장 버튼이 동작하지 않으면 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택해 주세요.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-zinc-200 p-4">
+          {actionErrorMsg && <p className="text-sm text-rose-600">{actionErrorMsg}</p>}
+          <div className="flex flex-wrap justify-center gap-2">
+            {canShare && (
+              <button
+                onClick={onShare}
+                disabled={shareState === "sharing"}
+                className="rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {shareState === "sharing" ? "공유 중…" : "공유하기 / 사진첩 저장"}
+              </button>
+            )}
+            <button
+              onClick={onDownloadPng}
+              disabled={!dataUrl}
+              className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+            >
+              이미지 다운로드
+            </button>
+            <button
+              onClick={onDownloadPdf}
+              disabled={!dataUrl || pdfState === "building"}
+              className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+            >
+              {pdfState === "building" ? "PDF 생성 중…" : "PDF 다운로드"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -220,17 +220,13 @@ export async function buildReportCanvas(input: ReportInput): Promise<HTMLCanvasE
   return canvas;
 }
 
-export async function shareOrDownloadCanvas(canvas: HTMLCanvasElement, filename: string): Promise<"shared" | "downloaded"> {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png", 0.95));
-  if (!blob) throw new Error("이미지 생성에 실패했습니다.");
+export function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("이미지 생성에 실패했습니다."))), "image/png", 0.95);
+  });
+}
 
-  const file = new File([blob], filename, { type: "image/png" });
-  const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
-  if (nav.canShare && nav.canShare({ files: [file] })) {
-    await navigator.share({ files: [file], title: "체형·자세 분석 리포트" });
-    return "shared";
-  }
-
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -239,5 +235,36 @@ export async function shareOrDownloadCanvas(canvas: HTMLCanvasElement, filename:
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  return "downloaded";
+}
+
+export function canShareFiles(file: File): boolean {
+  const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean };
+  return typeof nav.canShare === "function" && nav.canShare({ files: [file] });
+}
+
+/**
+ * Share a pre-built blob. Must be called as directly as possible after a user
+ * gesture (no `await` before this in the click handler) — Safari/WebKit revokes
+ * navigator.share()'s permission if too much async work happens first.
+ */
+export async function shareBlob(blob: Blob, filename: string): Promise<boolean> {
+  const file = new File([blob], filename, { type: blob.type || "image/png" });
+  if (!canShareFiles(file)) return false;
+  await navigator.share({ files: [file], title: "체형·자세 분석 리포트" });
+  return true;
+}
+
+export async function canvasToPdfBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  const PX_TO_MM = 25.4 / 96;
+  const widthMm = canvas.width * PX_TO_MM;
+  const heightMm = canvas.height * PX_TO_MM;
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: [widthMm, heightMm],
+  });
+  pdf.addImage(imgData, "JPEG", 0, 0, widthMm, heightMm);
+  return pdf.output("blob");
 }
