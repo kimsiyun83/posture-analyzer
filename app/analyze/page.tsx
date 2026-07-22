@@ -21,6 +21,11 @@ interface Shot {
 
 export default function AnalyzePage() {
   const [step, setStep] = useState<Step>("select-program");
+  // Once true, the camera stays mounted (just hidden) for the rest of the page's
+  // lifetime, even across "새로 측정하기" resets and errors — getUserMedia should
+  // only ever be requested once per visit, otherwise the browser/OS permission
+  // prompt can resurface on every capture cycle.
+  const [cameraActivated, setCameraActivated] = useState(false);
   const [programType, setProgramType] = useState<ProgramType | null>(null);
   const [frontShot, setFrontShot] = useState<Shot | null>(null);
   const [sideShot, setSideShot] = useState<Shot | null>(null);
@@ -177,17 +182,19 @@ export default function AnalyzePage() {
         <ProgramSelect
           onSelect={(type) => {
             setProgramType(type);
+            setCameraActivated(true);
             setStep("front-capture");
           }}
         />
       )}
 
-      {/* Kept mounted across front-capture -> analyzing -> side-capture so the camera
-          stream (and permission grant) survives the whole flow instead of being torn
-          down and reacquired between the two shots. Only unmounts once the side photo
-          is captured (moving on to results) or on error. */}
-      {step !== "select-program" && !sideShot && step !== "error" && (
-        <div className={step === "analyzing" ? "hidden" : "contents"}>
+      {/* Mounted once (on first program selection) and kept mounted — just hidden via
+          CSS — for the rest of the page's lifetime, including across "새로 측정하기"
+          resets and analysis errors. getUserMedia is only ever requested once per
+          visit; unmounting/remounting between capture cycles was re-triggering the
+          browser's camera permission prompt on every new client measurement. */}
+      {cameraActivated && (
+        <div className={step === "front-capture" || step === "side-capture" ? "contents" : "hidden"}>
           <Section
             title={step === "side-capture" ? "2. 측면 사진 촬영" : "1. 정면 사진 촬영"}
             desc={

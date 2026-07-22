@@ -234,7 +234,10 @@ export function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Revoking immediately after click() races the browser's (often async, especially
+  // on mobile) read of the blob: URL — the download can be cut off mid-transfer and
+  // sit stuck at "downloading" forever. Give it time to actually finish reading.
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 export function canShareFiles(file: File): boolean {
