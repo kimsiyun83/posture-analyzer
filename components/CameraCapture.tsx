@@ -14,8 +14,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [requestedDeviceId, setRequestedDeviceId] = useState<string | null>(null);
-  const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
+  const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
@@ -29,18 +28,33 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   useEffect(() => {
     let cancelled = false;
 
+    async function acquireStream(): Promise<MediaStream> {
+      // `exact` forces a genuinely different physical camera when the user asks to
+      // switch — `ideal` alone lets some browsers keep the current device, which was
+      // the root cause of "switch camera" needing two clicks to visibly take effect.
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facing } },
+          audio: false,
+        });
+      } catch {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facing } },
+            audio: false,
+          });
+        } catch {
+          return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+      }
+    }
+
     async function start() {
       setReady(false);
       setError(null);
       stopStream();
       try {
-        const constraints: MediaStreamConstraints = {
-          video: requestedDeviceId
-            ? { deviceId: { exact: requestedDeviceId } }
-            : { facingMode: { ideal: "environment" } },
-          audio: false,
-        };
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const stream = await acquireStream();
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -51,7 +65,6 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
           await videoRef.current.play();
         }
         setReady(true);
-        setActiveDeviceId(stream.getVideoTracks()[0]?.getSettings().deviceId ?? null);
         // Device labels/ids are only populated once permission is granted; enumerate lazily
         // and only adopt the result if we don't already have a list (avoids re-triggering
         // this effect via a `devices.length` dependency every time the list is (re)filled).
@@ -70,7 +83,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
       stopStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedDeviceId]);
+  }, [facing]);
 
   useEffect(() => {
     return () => {
@@ -117,10 +130,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   };
 
   const handleSwitchCamera = () => {
-    if (devices.length < 2) return;
-    const currentIdx = devices.findIndex((d) => d.deviceId === activeDeviceId);
-    const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % devices.length;
-    setRequestedDeviceId(devices[nextIdx].deviceId);
+    setFacing((f) => (f === "environment" ? "user" : "environment"));
   };
 
   return (

@@ -1,4 +1,5 @@
 import type { Reading } from "@/lib/pose/metrics";
+import { SEVERITY_LABEL_KO, formatReadingValue } from "@/lib/pose/metrics";
 
 const SEVERITY_STYLE: Record<Reading["severity"], string> = {
   normal: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -6,24 +7,13 @@ const SEVERITY_STYLE: Record<Reading["severity"], string> = {
   notable: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
-const SEVERITY_LABEL: Record<Reading["severity"], string> = {
-  normal: "정상 범위",
-  mild: "경도 편차",
-  notable: "뚜렷한 편차",
-};
-
-function formatValue(r: Reading): string {
-  if (r.unit === "deg") return `${r.value.toFixed(1)}°`;
-  return `${(r.value * 100).toFixed(1)}%`;
-}
-
 export function ReadingRow({ reading }: { reading: Reading }) {
   return (
     <div className={`rounded-lg border p-3 ${SEVERITY_STYLE[reading.severity]}`}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-medium">{reading.label}</span>
         <span className="text-sm font-semibold whitespace-nowrap">
-          {formatValue(reading)} · {SEVERITY_LABEL[reading.severity]}
+          {formatReadingValue(reading)} · {SEVERITY_LABEL_KO[reading.severity]}
         </span>
       </div>
       <p className="mt-1 text-xs opacity-80">{reading.note}</p>

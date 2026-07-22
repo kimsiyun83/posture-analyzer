@@ -5,11 +5,14 @@ import Link from "next/link";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
 import { ReadingRow, ScoreGauge } from "@/components/ResultsReport";
+import ProgramFocusPanel from "@/components/ProgramFocusPanel";
 import { getPoseLandmarker } from "@/lib/pose/model";
 import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
+import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
+import { buildReportCanvas, shareOrDownloadCanvas } from "@/lib/report";
 
-type Step = "front-capture" | "side-capture" | "analyzing" | "results" | "error";
+type Step = "select-program" | "front-capture" | "side-capture" | "analyzing" | "results" | "error";
 
 interface Shot {
   dataUrl: string;
@@ -17,12 +20,15 @@ interface Shot {
 }
 
 export default function AnalyzePage() {
-  const [step, setStep] = useState<Step>("front-capture");
+  const [step, setStep] = useState<Step>("select-program");
+  const [programType, setProgramType] = useState<ProgramType | null>(null);
   const [frontShot, setFrontShot] = useState<Shot | null>(null);
   const [sideShot, setSideShot] = useState<Shot | null>(null);
   const [frontResult, setFrontResult] = useState<FrontResult | null>(null);
   const [sideResult, setSideResult] = useState<SideResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
 
   async function detect(dataUrl: string): Promise<PoseLandmarks> {
     const landmarker = await getPoseLandmarker();
@@ -71,7 +77,36 @@ export default function AnalyzePage() {
     setFrontResult(null);
     setSideResult(null);
     setErrorMsg(null);
-    setStep("front-capture");
+    setProgramType(null);
+    setSaveState("idle");
+    setSaveErrorMsg(null);
+    setStep("select-program");
+  }
+
+  async function handleSaveReport() {
+    if (!frontShot || !sideShot || !frontResult || !sideResult || !programType) return;
+    setSaveState("saving");
+    setSaveErrorMsg(null);
+    try {
+      const canvas = await buildReportCanvas({
+        frontShot,
+        sideShot,
+        frontResult,
+        sideResult,
+        programType,
+        dateLabel: new Date().toLocaleDateString("ko-KR"),
+      });
+      await shareOrDownloadCanvas(canvas, `posture-report-${Date.now()}.png`);
+      setSaveState("idle");
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        // user cancelled the native share sheet — not a real error
+        setSaveState("idle");
+        return;
+      }
+      setSaveErrorMsg(e instanceof Error ? e.message : "리포트 저장에 실패했습니다.");
+      setSaveState("error");
+    }
   }
 
   return (
@@ -83,11 +118,20 @@ export default function AnalyzePage() {
         <StepIndicator step={step} />
       </header>
 
+      {step === "select-program" && (
+        <ProgramSelect
+          onSelect={(type) => {
+            setProgramType(type);
+            setStep("front-capture");
+          }}
+        />
+      )}
+
       {/* Kept mounted across front-capture -> analyzing -> side-capture so the camera
           stream (and permission grant) survives the whole flow instead of being torn
           down and reacquired between the two shots. Only unmounts once the side photo
           is captured (moving on to results) or on error. */}
-      {!sideShot && step !== "error" && (
+      {step !== "select-program" && !sideShot && step !== "error" && (
         <div className={step === "analyzing" ? "hidden" : "contents"}>
           <Section
             title={step === "side-capture" ? "2. 측면 사진 촬영" : "1. 정면 사진 촬영"}
@@ -121,12 +165,14 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {step === "results" && frontShot && sideShot && frontResult && sideResult && (
+      {step === "results" && frontShot && sideShot && frontResult && sideResult && programType && (
         <div className="flex flex-col gap-8">
           <div className="flex items-center justify-around rounded-xl bg-zinc-50 p-6">
             <ScoreGauge label="정면 정렬 점수" score={frontResult.overallScore} />
             <ScoreGauge label="측면 정렬 점수" score={sideResult.overallScore} />
           </div>
+
+          <ProgramFocusPanel programType={programType} frontResult={frontResult} sideResult={sideResult} />
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div className="flex flex-col gap-3">
@@ -153,13 +199,23 @@ export default function AnalyzePage() {
 
           <Methodology />
 
-          <div className="flex justify-center gap-3 print:hidden">
-            <button onClick={() => window.print()} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
-              보고서 인쇄/저장
-            </button>
-            <button onClick={reset} className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white">
-              새로 측정하기
-            </button>
+          <div className="flex flex-col items-center gap-2 print:hidden">
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                onClick={handleSaveReport}
+                disabled={saveState === "saving"}
+                className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {saveState === "saving" ? "저장 중…" : "사진첩에 리포트 저장"}
+              </button>
+              <button onClick={() => window.print()} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
+                인쇄/PDF
+              </button>
+              <button onClick={reset} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
+                새로 측정하기
+              </button>
+            </div>
+            {saveState === "error" && saveErrorMsg && <p className="text-sm text-rose-600">{saveErrorMsg}</p>}
           </div>
         </div>
       )}
@@ -180,7 +236,7 @@ function Section({ title, desc, children }: { title: string; desc: string; child
 }
 
 function StepIndicator({ step }: { step: Step }) {
-  const order: Step[] = ["front-capture", "side-capture", "results"];
+  const order: Step[] = ["select-program", "front-capture", "side-capture", "results"];
   const idx = order.indexOf(step);
   return (
     <div className="flex gap-1.5">
@@ -191,6 +247,36 @@ function StepIndicator({ step }: { step: Step }) {
         />
       ))}
     </div>
+  );
+}
+
+function ProgramSelect({ onSelect }: { onSelect: (type: ProgramType) => void }) {
+  return (
+    <section className="flex flex-col items-center gap-5">
+      <div className="text-center">
+        <h2 className="text-lg font-semibold">0. 어떤 수업을 위한 측정인가요?</h2>
+        <p className="mt-1 text-sm text-zinc-500">선택한 유형에 맞춰 핵심 체크포인트를 다르게 짚어드립니다.</p>
+      </div>
+      <div className="flex w-full max-w-md flex-col gap-3">
+        {PROGRAM_ORDER.map((type) => {
+          const meta = PROGRAM_META[type];
+          return (
+            <button
+              key={type}
+              type="button"
+              onClick={() => onSelect(type)}
+              className="rounded-xl border border-zinc-200 p-4 text-left transition-colors hover:border-zinc-400 hover:bg-zinc-50"
+            >
+              <div className="flex items-baseline justify-between">
+                <span className="font-semibold text-zinc-900">{meta.label}</span>
+                <span className="text-xs text-zinc-500">{meta.short}</span>
+              </div>
+              <p className="mt-1 text-sm text-zinc-600">{meta.description}</p>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

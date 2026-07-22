@@ -11,6 +11,9 @@ export default function Home() {
             정면·측면 사진 한 장씩으로 어깨·골반 좌우 균형, 전방머리자세, 무릎 정렬 등을
             <br className="hidden sm:block" />
             검증된 자세 평가 방법론 기반으로 수치화해 드립니다.
+            <br className="hidden sm:block" />
+            필라테스·패시브 스트레칭·PT 중 수업 유형을 고르면 유형별 핵심 체크포인트를 짚어드리고,
+            리포트 이미지를 사진첩에 바로 저장할 수 있습니다.
           </p>
         </div>
 

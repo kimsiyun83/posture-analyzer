@@ -3,12 +3,41 @@ import { angleAt, distance, midpoint, tiltFromLevel } from "./math";
 
 export type Severity = "normal" | "mild" | "notable";
 
+export type ReadingKey =
+  | "headTilt"
+  | "shoulderTilt"
+  | "hipTilt"
+  | "kneeAlignmentLeft"
+  | "kneeAlignmentRight"
+  | "forwardHeadAngle"
+  | "shoulderPlumbOffset"
+  | "hipPlumbOffset"
+  | "kneePlumbOffset";
+
 export interface Reading {
+  key: ReadingKey;
   label: string;
   value: number;
   unit: "deg" | "ratio";
   severity: Severity;
   note: string;
+}
+
+export const SEVERITY_LABEL_KO: Record<Severity, string> = {
+  normal: "정상 범위",
+  mild: "경도 편차",
+  notable: "뚜렷한 편차",
+};
+
+export const SEVERITY_HEX: Record<Severity, string> = {
+  normal: "#059669",
+  mild: "#d97706",
+  notable: "#e11d48",
+};
+
+export function formatReadingValue(r: Reading): string {
+  if (r.unit === "deg") return `${r.value.toFixed(1)}°`;
+  return `${(r.value * 100).toFixed(1)}%`;
 }
 
 function classify(absValue: number, mildAt: number, notableAt: number): Severity {
@@ -50,6 +79,7 @@ export function computeFrontMetrics(lm: PoseLandmarks): FrontResult {
   const hipTiltVal = tiltFromLevel(leftHip, rightHip);
 
   const headTilt: Reading = {
+    key: "headTilt",
     label: "머리 기울기 (좌우 눈 수평)",
     value: headTiltVal,
     unit: "deg",
@@ -57,6 +87,7 @@ export function computeFrontMetrics(lm: PoseLandmarks): FrontResult {
     note: "양쪽 눈을 잇는 선이 수평에서 벗어난 각도입니다.",
   };
   const shoulderTilt: Reading = {
+    key: "shoulderTilt",
     label: "어깨 좌우 높이차",
     value: shoulderTiltVal,
     unit: "deg",
@@ -64,6 +95,7 @@ export function computeFrontMetrics(lm: PoseLandmarks): FrontResult {
     note: "양쪽 어깨(견봉 추정 지점)를 잇는 선이 수평에서 벗어난 각도입니다.",
   };
   const hipTilt: Reading = {
+    key: "hipTilt",
     label: "골반 좌우 높이차",
     value: hipTiltVal,
     unit: "deg",
@@ -109,6 +141,7 @@ function kneeValgusVarus(hip: Point, knee: Point, ankle: Point, side: "left" | "
   const abs = Math.abs(ratio);
   const direction = ratio > 0 ? "무릎이 안쪽으로 쏠림(외반슬 경향)" : ratio < 0 ? "무릎이 바깥쪽으로 벌어짐(내반슬 경향)" : "정렬 양호";
   return {
+    key: side === "left" ? "kneeAlignmentLeft" : "kneeAlignmentRight",
     label: side === "left" ? "왼쪽 무릎 정렬" : "오른쪽 무릎 정렬",
     value: ratio,
     unit: "ratio",
@@ -160,6 +193,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
   const horizonPoint: Point = { x: shoulder.x + anteriorDir * 100, y: shoulder.y };
   const fha = angleAt(horizonPoint, shoulder, ear);
   const forwardHeadAngle: Reading = {
+    key: "forwardHeadAngle",
     label: "귀-어깨 각도 (전방머리자세 근사 지표, CVA 대체)",
     value: fha,
     unit: "deg",
@@ -179,6 +213,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
   const kneeOffsetVal = plumbOffset(knee);
 
   const shoulderPlumbOffset: Reading = {
+    key: "shoulderPlumbOffset",
     label: "어깨 전후 정렬 (발목 수직선 기준)",
     value: shoulderOffsetVal,
     unit: "ratio",
@@ -186,6 +221,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
     note: "발목에서 올린 수직선 대비 어깨의 전/후 편차(신장 대비 비율). 양수는 어깨가 앞으로 나온 둥근어깨 경향을 시사합니다.",
   };
   const hipPlumbOffset: Reading = {
+    key: "hipPlumbOffset",
     label: "골반 전후 정렬 (발목 수직선 기준)",
     value: hipOffsetVal,
     unit: "ratio",
@@ -193,6 +229,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
     note: "발목 수직선 대비 골반의 전/후 편차. 골반 전방/후방 경사 스크리닝에 참고합니다.",
   };
   const kneePlumbOffset: Reading = {
+    key: "kneePlumbOffset",
     label: "무릎 전후 정렬 (발목 수직선 기준)",
     value: kneeOffsetVal,
     unit: "ratio",
@@ -258,6 +295,20 @@ export function keyLandmarksForOverlay(lm: PoseLandmarks, view: "front" | "side"
     ] as [Point, Point][],
     plumb: { top: ear, bottom: ankle },
   };
+}
+
+export function collectReadings(front: FrontResult, side: SideResult): Reading[] {
+  return [
+    front.headTilt,
+    front.shoulderTilt,
+    front.hipTilt,
+    front.kneeAlignmentLeft,
+    front.kneeAlignmentRight,
+    side.forwardHeadAngle,
+    side.shoulderPlumbOffset,
+    side.hipPlumbOffset,
+    side.kneePlumbOffset,
+  ];
 }
 
 export { midpoint };
