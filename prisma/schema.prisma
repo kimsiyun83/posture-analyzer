@@ -1,0 +1,363 @@
+// Full platform schema. Provider is SQLite for zero-cost local/dev use — every
+// field type used here (String, Int, Float, Boolean, DateTime, Json) is also valid
+// on PostgreSQL, so switching `provider = "sqlite"` -> `"postgresql"` and pointing
+// DATABASE_URL at a real Postgres instance (e.g. Vercel Postgres/Neon, free tier)
+// is the only change needed to move to production-grade storage. No enums are used
+// (SQLite has no native enum type) — allowed values are documented per field and
+// enforced in the app layer via TypeScript literal unions in lib/types.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------- Staff accounts (trainers/admins) ----------
+// Members do NOT get login accounts in this build — this is a staff-facing CRM/PT
+// tool, not a member self-service portal (kept the "member portal" part of the
+// original spec out of scope; see project notes).
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String // "admin" | "trainer"
+  phone        String?
+  specialty    String? // e.g. "PT", "필라테스", "패시브 스트레칭"
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  membersCreated    Member[]           @relation("MemberCreatedBy")
+  painRecords       PainRecord[]
+  payments          Payment[]
+  attendanceAsStaff Attendance[]
+  reservations      Reservation[]
+  bodyAssessments   BodyAssessment[]
+  postureResults    PostureResult[]
+  inbodyResults     InbodyResult[]
+  romRecords        RomRecord[]
+  exerciseLogs      ExerciseLog[]
+  pilatesRecords    PilatesRecord[]
+  stretchLogs       StretchLog[]
+  aiReports         AiReport[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+}
+
+// ---------- Members (clients) ----------
+
+model Member {
+  id              String   @id @default(cuid())
+  name            String
+  phone           String?
+  email           String?
+  birthDate       DateTime?
+  gender          String? // "M" | "F" | "OTHER"
+  joinedAt        DateTime @default(now())
+  memo            String?
+  medicalHistory  String? // free text: past injuries/surgeries/conditions
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdByUserId String?
+  createdBy       User?    @relation("MemberCreatedBy", fields: [createdByUserId], references: [id])
+
+  packages        MembershipPackage[]
+  payments        Payment[]
+  attendance      Attendance[]
+  reservations    Reservation[]
+  painRecords     PainRecord[]
+  bodyAssessments BodyAssessment[]
+  postureResults  PostureResult[]
+  inbodyResults   InbodyResult[]
+  romRecords      RomRecord[]
+  exerciseLogs    ExerciseLog[]
+  personalRecords PersonalRecord[]
+  pilatesRecords  PilatesRecord[]
+  stretchLogs     StretchLog[]
+  nutritionLogs   NutritionLog[]
+  aiReports       AiReport[]
+
+  @@index([name])
+}
+
+model PainRecord {
+  id            String   @id @default(cuid())
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  bodyPart      String
+  description   String?
+  severity      Int // 1-10
+  recordedAt    DateTime @default(now())
+  recordedById  String?
+  recordedBy    User?    @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+}
+
+// ---------- Packages, payments, attendance, reservations ----------
+
+model MembershipPackage {
+  id                String   @id @default(cuid())
+  memberId          String
+  member            Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  name              String
+  sessionType       String // "PT" | "PILATES" | "STRETCHING" | "MIXED"
+  totalSessions     Int?
+  remainingSessions Int?
+  startDate         DateTime @default(now())
+  endDate           DateTime?
+  price             Float
+  createdAt         DateTime @default(now())
+
+  payments     Payment[]
+  reservations Reservation[]
+
+  @@index([memberId])
+}
+
+model Payment {
+  id             String              @id @default(cuid())
+  memberId       String
+  member         Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  packageId      String?
+  package        MembershipPackage?  @relation(fields: [packageId], references: [id])
+  amount         Float
+  method         String // "CASH" | "CARD" | "TRANSFER" | "OTHER"
+  memo           String?
+  paidAt         DateTime            @default(now())
+  recordedById   String?
+  recordedBy     User?               @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+  @@index([paidAt])
+}
+
+model Attendance {
+  id            String    @id @default(cuid())
+  memberId      String
+  member        Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  sessionType   String // "PT" | "PILATES" | "STRETCHING"
+  checkedInAt   DateTime  @default(now())
+  checkedOutAt  DateTime?
+  staffId       String?
+  staff         User?     @relation(fields: [staffId], references: [id])
+
+  @@index([memberId])
+  @@index([checkedInAt])
+}
+
+model Reservation {
+  id               String             @id @default(cuid())
+  memberId         String
+  member           Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  trainerId        String?
+  trainer          User?              @relation(fields: [trainerId], references: [id])
+  packageId        String?
+  package          MembershipPackage? @relation(fields: [packageId], references: [id])
+  sessionType      String // "PT" | "PILATES" | "STRETCHING"
+  scheduledAt      DateTime
+  durationMinutes  Int                @default(60)
+  status           String             @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED | NO_SHOW
+  memo             String?
+  createdAt        DateTime           @default(now())
+
+  @@index([memberId])
+  @@index([scheduledAt])
+}
+
+// ---------- Assessments ----------
+
+model BodyAssessment {
+  id             String   @id @default(cuid())
+  memberId       String
+  member         Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  heightCm       Float?
+  weightKg       Float?
+  bodyFatPercent Float?
+  muscleMassKg   Float?
+  bmi            Float?
+  measuredAt     DateTime @default(now())
+  recordedById   String?
+  recordedBy     User?    @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+}
+
+// Reuses the existing MediaPipe-based posture screening (front+side photo ->
+// angles/offsets) — now attached to a member so results can be tracked over time
+// instead of being a one-off anonymous session.
+model PostureResult {
+  id            String   @id @default(cuid())
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  programType   String // "pilates" | "stretching" | "pt"
+  frontScore    Int
+  sideScore     Int
+  metricsJson   Json // full Reading[] output from lib/pose/metrics.ts
+  measuredAt    DateTime @default(now())
+  recordedById  String?
+  recordedBy    User?    @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+}
+
+model InbodyResult {
+  id                 String   @id @default(cuid())
+  memberId           String
+  member             Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  weightKg           Float?
+  skeletalMuscleKg   Float?
+  bodyFatMassKg      Float?
+  bodyFatPercent     Float?
+  bmi                Float?
+  visceralFatLevel   Float?
+  ocrRawText         String? // raw Tesseract.js OCR output, kept for audit/debugging
+  ocrConfidence      Float?
+  measuredAt         DateTime @default(now())
+  recordedById       String?
+  recordedBy         User?    @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+}
+
+model RomRecord {
+  id            String   @id @default(cuid())
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  joint         String // e.g. "고관절", "어깨", "발목"
+  movement      String // e.g. "굴곡", "신전", "회전"
+  degreeBefore  Float?
+  degreeAfter   Float?
+  measuredAt    DateTime @default(now())
+  recordedById  String?
+  recordedBy    User?    @relation(fields: [recordedById], references: [id])
+
+  @@index([memberId])
+}
+
+// ---------- PT ----------
+
+model ExerciseLog {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  exerciseName String
+  setsJson    Json // [{ reps, weightKg, rpe? }]
+  sessionDate DateTime @default(now())
+  trainerId   String?
+  trainer     User?    @relation(fields: [trainerId], references: [id])
+  notes       String?
+
+  @@index([memberId])
+}
+
+model PersonalRecord {
+  id           String   @id @default(cuid())
+  memberId     String
+  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  exerciseName String
+  value        Float
+  unit         String // "kg" | "reps" | "sec"
+  achievedAt   DateTime @default(now())
+
+  @@index([memberId])
+}
+
+// ---------- Pilates ----------
+
+model PilatesRecord {
+  id           String   @id @default(cuid())
+  memberId     String
+  member       Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  equipment    String // "REFORMER" | "CADILLAC" | "CHAIR" | "BARREL" | "MAT"
+  level        String // "BEGINNER" | "INTERMEDIATE" | "ADVANCED"
+  exercisesJson Json // [{ name, reps/duration, notes }]
+  classDate    DateTime @default(now())
+  trainerId    String?
+  trainer      User?    @relation(fields: [trainerId], references: [id])
+  notes        String?
+
+  @@index([memberId])
+}
+
+// ---------- Passive stretching ----------
+
+model StretchLog {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  bodyPart    String
+  intensity   Int // 1-5
+  romBefore   Float?
+  romAfter    Float?
+  painBefore  Int? // 0-10
+  painAfter   Int? // 0-10
+  sessionDate DateTime @default(now())
+  trainerId   String?
+  trainer     User?    @relation(fields: [trainerId], references: [id])
+  notes       String?
+
+  @@index([memberId])
+}
+
+// ---------- Nutrition / AI ----------
+
+model NutritionLog {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  mealType    String? // "breakfast" | "lunch" | "dinner" | "snack"
+  description String
+  estCalories Int?
+  recordedAt  DateTime @default(now())
+  aiGenerated Boolean  @default(false)
+
+  @@index([memberId])
+}
+
+model AiReport {
+  id            String   @id @default(cuid())
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  type          String // "CONSULTATION_NOTE" | "EXERCISE_RECOMMENDATION" | "DIET_RECOMMENDATION" | "PDF_SUMMARY"
+  content       String
+  engineUsed    String   @default("rule-based") // "rule-based" | "openai" — which AI backend produced this
+  generatedAt   DateTime @default(now())
+  generatedById String?
+  generatedBy   User?    @relation(fields: [generatedById], references: [id])
+
+  @@index([memberId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String // e.g. "member.create", "payment.record", "login"
+  entityType String?
+  entityId   String?
+  detailJson Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
