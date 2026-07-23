@@ -139,6 +139,14 @@ export function addPayment(input: {
   });
 }
 
+export function listRecentAttendance(take = 50) {
+  return prisma.attendance.findMany({
+    include: { member: true, staff: true },
+    orderBy: { checkedInAt: "desc" },
+    take,
+  });
+}
+
 export async function checkIn(input: { memberId: string; sessionType: SessionType; staffId?: string; packageId?: string }) {
   const attendance = await prisma.attendance.create({
     data: {
