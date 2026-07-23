@@ -8,7 +8,8 @@ import * as memberService from "@/lib/services/members";
 import * as ptService from "@/lib/services/pt";
 import * as pilatesService from "@/lib/services/pilates";
 import * as stretchingService from "@/lib/services/stretching";
-import type { Gender, PaymentMethod, PilatesEquipment, PilatesLevel, SessionType } from "@/lib/types";
+import { generateAiReport } from "@/lib/services/aiReports";
+import type { AiReportType, Gender, PaymentMethod, PilatesEquipment, PilatesLevel, SessionType } from "@/lib/types";
 
 export async function createMemberAction(formData: FormData) {
   const session = await getSession();
@@ -196,5 +197,16 @@ export async function addStretchLogAction(memberId: string, formData: FormData) 
   });
 
   await writeAuditLog({ userId: session.sub, action: "stretchLog.create", entityType: "Member", entityId: memberId });
+  revalidatePath(`/members/${memberId}`);
+}
+
+export async function generateAiReportAction(memberId: string, formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const type = String(formData.get("type") ?? "CONSULTATION_NOTE") as AiReportType;
+  await generateAiReport({ memberId, type, generatedById: session.sub });
+
+  await writeAuditLog({ userId: session.sub, action: "aiReport.generate", entityType: "Member", entityId: memberId, detail: { type } });
   revalidatePath(`/members/${memberId}`);
 }

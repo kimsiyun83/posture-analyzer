@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getMemberDetail } from "@/lib/services/members";
 import {
+  AI_REPORT_TYPE_LABEL_KO,
   PAYMENT_METHOD_LABEL_KO,
   PAYMENT_METHODS,
   PILATES_EQUIPMENT,
@@ -12,6 +13,8 @@ import {
   SESSION_TYPES,
 } from "@/lib/types";
 import { PROGRAM_META, type ProgramType } from "@/lib/pose/programs";
+import InbodyUpload from "@/components/InbodyUpload";
+import MemberPdfExportButton, { type MemberPdfData } from "@/components/MemberPdfExportButton";
 import {
   addExerciseLogAction,
   addPackageAction,
@@ -21,6 +24,7 @@ import {
   addPilatesRecordAction,
   addStretchLogAction,
   checkInAction,
+  generateAiReportAction,
   updateMemberAction,
 } from "../actions";
 
@@ -38,14 +42,48 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   const personalRecordAction = addPersonalRecordAction.bind(null, member.id);
   const pilatesRecordAction = addPilatesRecordAction.bind(null, member.id);
   const stretchLogAction = addStretchLogAction.bind(null, member.id);
+  const aiReportAction = generateAiReportAction.bind(null, member.id);
+
+  const latestPosture = member.postureResults[0];
+  const latestInbody = member.inbodyResults[0];
+  const pdfData: MemberPdfData = {
+    name: member.name,
+    phone: member.phone,
+    joinedAtLabel: member.joinedAt.toLocaleDateString("ko-KR"),
+    medicalHistory: member.medicalHistory,
+    latestPosture: latestPosture
+      ? {
+          programType: PROGRAM_META[latestPosture.programType as ProgramType]?.label ?? latestPosture.programType,
+          frontScore: latestPosture.frontScore,
+          sideScore: latestPosture.sideScore,
+          dateLabel: latestPosture.measuredAt.toLocaleDateString("ko-KR"),
+        }
+      : null,
+    latestInbody: latestInbody
+      ? {
+          weightKg: latestInbody.weightKg,
+          bodyFatPercent: latestInbody.bodyFatPercent,
+          bmi: latestInbody.bmi,
+          dateLabel: latestInbody.measuredAt.toLocaleDateString("ko-KR"),
+        }
+      : null,
+    aiReports: member.aiReports.map((r) => ({
+      typeLabel: AI_REPORT_TYPE_LABEL_KO[r.type as keyof typeof AI_REPORT_TYPE_LABEL_KO] ?? r.type,
+      content: r.content,
+      dateLabel: r.generatedAt.toLocaleDateString("ko-KR"),
+    })),
+  };
 
   return (
     <div className="flex flex-col gap-8 pb-16">
-      <div>
-        <h1 className="text-xl font-bold text-zinc-900">{member.name}</h1>
-        <p className="text-sm text-zinc-500">
-          {member.phone ?? "연락처 없음"} · 가입일 {member.joinedAt.toLocaleDateString("ko-KR")}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-zinc-900">{member.name}</h1>
+          <p className="text-sm text-zinc-500">
+            {member.phone ?? "연락처 없음"} · 가입일 {member.joinedAt.toLocaleDateString("ko-KR")}
+          </p>
+        </div>
+        <MemberPdfExportButton data={pdfData} />
       </div>
 
       <Section title="프로필 · 병력">
@@ -377,6 +415,59 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             </li>
           ))}
           {member.postureResults.length === 0 && <li className="text-zinc-400">측정 기록 없음</li>}
+        </ul>
+      </Section>
+
+      <Section title="인바디 결과 (OCR 자동 인식)">
+        <InbodyUpload memberId={member.id} />
+        <ul className="mt-3 flex flex-col gap-2 text-sm">
+          {member.inbodyResults.map((r) => (
+            <li key={r.id} className="rounded-lg border border-zinc-200 p-2">
+              체중 {r.weightKg ?? "-"}kg · 골격근량 {r.skeletalMuscleKg ?? "-"}kg · 체지방률 {r.bodyFatPercent ?? "-"}% ·
+              BMI {r.bmi ?? "-"} · 내장지방 {r.visceralFatLevel ?? "-"}
+              <span className="ml-2 text-xs text-zinc-400">{r.measuredAt.toLocaleDateString("ko-KR")}</span>
+            </li>
+          ))}
+          {member.inbodyResults.length === 0 && <li className="text-zinc-400">등록된 인바디 기록 없음</li>}
+        </ul>
+      </Section>
+
+      <Section title="AI 리포트">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <form action={aiReportAction}>
+            <input type="hidden" name="type" value="CONSULTATION_NOTE" />
+            <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+              상담노트 생성
+            </button>
+          </form>
+          <form action={aiReportAction}>
+            <input type="hidden" name="type" value="EXERCISE_RECOMMENDATION" />
+            <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+              운동 추천 생성
+            </button>
+          </form>
+          <form action={aiReportAction}>
+            <input type="hidden" name="type" value="DIET_RECOMMENDATION" />
+            <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+              식단 방향 제안 생성
+            </button>
+          </form>
+        </div>
+        <ul className="flex flex-col gap-3">
+          {member.aiReports.map((r) => (
+            <li key={r.id} className="rounded-lg border border-zinc-200 p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-medium text-zinc-500">
+                  {AI_REPORT_TYPE_LABEL_KO[r.type as keyof typeof AI_REPORT_TYPE_LABEL_KO] ?? r.type}
+                </span>
+                <span className="text-xs text-zinc-400">
+                  {r.generatedAt.toLocaleString("ko-KR")} · {r.engineUsed}
+                </span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-700">{r.content}</p>
+            </li>
+          ))}
+          {member.aiReports.length === 0 && <li className="text-sm text-zinc-400">생성된 리포트 없음</li>}
         </ul>
       </Section>
     </div>

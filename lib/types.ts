@@ -25,6 +25,13 @@ export const AI_REPORT_TYPES = [
 ] as const;
 export type AiReportType = (typeof AI_REPORT_TYPES)[number];
 
+export const AI_REPORT_TYPE_LABEL_KO: Record<AiReportType, string> = {
+  CONSULTATION_NOTE: "상담노트",
+  EXERCISE_RECOMMENDATION: "운동 추천",
+  DIET_RECOMMENDATION: "식단 방향 제안",
+  PDF_SUMMARY: "PDF 요약",
+};
+
 export const GENDERS = ["M", "F", "OTHER"] as const;
 export type Gender = (typeof GENDERS)[number];
 
