@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+prisma/*.db
+prisma/*.db-journal
+.env
+.env.local
+.agents
+.claude
+.windsurf
+skills-lock.json
