@@ -4,11 +4,25 @@ import { getMemberDetail } from "@/lib/services/members";
 import {
   PAYMENT_METHOD_LABEL_KO,
   PAYMENT_METHODS,
+  PILATES_EQUIPMENT,
+  PILATES_EQUIPMENT_LABEL_KO,
+  PILATES_LEVELS,
+  PILATES_LEVEL_LABEL_KO,
   SESSION_TYPE_LABEL_KO,
   SESSION_TYPES,
 } from "@/lib/types";
 import { PROGRAM_META, type ProgramType } from "@/lib/pose/programs";
-import { addPackageAction, addPainRecordAction, addPaymentAction, checkInAction, updateMemberAction } from "../actions";
+import {
+  addExerciseLogAction,
+  addPackageAction,
+  addPainRecordAction,
+  addPaymentAction,
+  addPersonalRecordAction,
+  addPilatesRecordAction,
+  addStretchLogAction,
+  checkInAction,
+  updateMemberAction,
+} from "../actions";
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -20,6 +34,10 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   const packageAction = addPackageAction.bind(null, member.id);
   const paymentAction = addPaymentAction.bind(null, member.id);
   const checkinAction = checkInAction.bind(null, member.id);
+  const exerciseLogAction = addExerciseLogAction.bind(null, member.id);
+  const personalRecordAction = addPersonalRecordAction.bind(null, member.id);
+  const pilatesRecordAction = addPilatesRecordAction.bind(null, member.id);
+  const stretchLogAction = addStretchLogAction.bind(null, member.id);
 
   return (
     <div className="flex flex-col gap-8 pb-16">
@@ -206,6 +224,141 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             </li>
           ))}
           {member.attendance.length === 0 && <li className="text-zinc-400">출석 기록 없음</li>}
+        </ul>
+      </Section>
+
+      <Section title="PT 운동 기록">
+        <form action={exerciseLogAction} className="mb-3 flex flex-wrap items-end gap-2">
+          <MiniField label="운동명" name="exerciseName" required placeholder="스쿼트" />
+          <MiniField label="횟수" name="reps" type="number" />
+          <MiniField label="중량(kg)" name="weightKg" type="number" />
+          <MiniField label="메모" name="notes" />
+          <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+            기록
+          </button>
+        </form>
+        <form action={personalRecordAction} className="mb-4 flex flex-wrap items-end gap-2">
+          <MiniField label="PR 종목" name="exerciseName" required placeholder="데드리프트" />
+          <MiniField label="기록값" name="value" type="number" required />
+          <div>
+            <label className="text-xs text-zinc-500">단위</label>
+            <select name="unit" className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
+              <option value="kg">kg</option>
+              <option value="reps">회</option>
+              <option value="sec">초</option>
+            </select>
+          </div>
+          <button type="submit" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+            PR 등록
+          </button>
+        </form>
+        <ul className="flex flex-col gap-2 text-sm">
+          {member.exerciseLogs.map((e) => {
+            const sets = Array.isArray(e.setsJson) ? (e.setsJson as { reps: number; weightKg?: number }[]) : [];
+            return (
+              <li key={e.id} className="rounded-lg border border-zinc-200 p-2">
+                <span className="font-medium">{e.exerciseName}</span>{" "}
+                {sets.map((s, i) => (
+                  <span key={i} className="text-zinc-500">
+                    {i > 0 && ", "}
+                    {s.reps}회{s.weightKg ? ` x ${s.weightKg}kg` : ""}
+                  </span>
+                ))}
+                <span className="ml-2 text-xs text-zinc-400">{e.sessionDate.toLocaleDateString("ko-KR")}</span>
+              </li>
+            );
+          })}
+          {member.personalRecords.map((p) => (
+            <li key={p.id} className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+              PR: <span className="font-medium">{p.exerciseName}</span> {p.value}
+              {p.unit} <span className="ml-2 text-xs text-zinc-400">{p.achievedAt.toLocaleDateString("ko-KR")}</span>
+            </li>
+          ))}
+          {member.exerciseLogs.length === 0 && member.personalRecords.length === 0 && (
+            <li className="text-zinc-400">기록 없음</li>
+          )}
+        </ul>
+      </Section>
+
+      <Section title="필라테스 기록">
+        <form action={pilatesRecordAction} className="mb-4 flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-xs text-zinc-500">기구</label>
+            <select name="equipment" className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
+              {PILATES_EQUIPMENT.map((eq) => (
+                <option key={eq} value={eq}>
+                  {PILATES_EQUIPMENT_LABEL_KO[eq]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">레벨</label>
+            <select name="level" className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
+              {PILATES_LEVELS.map((lv) => (
+                <option key={lv} value={lv}>
+                  {PILATES_LEVEL_LABEL_KO[lv]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <MiniField label="주요 동작" name="exerciseName" placeholder="풀업" />
+          <MiniField label="메모" name="notes" />
+          <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+            기록
+          </button>
+        </form>
+        <ul className="flex flex-col gap-2 text-sm">
+          {member.pilatesRecords.map((p) => {
+            const exercises = Array.isArray(p.exercisesJson) ? (p.exercisesJson as { name: string }[]) : [];
+            return (
+              <li key={p.id} className="rounded-lg border border-zinc-200 p-2">
+                {PILATES_EQUIPMENT_LABEL_KO[p.equipment as keyof typeof PILATES_EQUIPMENT_LABEL_KO]} ·{" "}
+                {PILATES_LEVEL_LABEL_KO[p.level as keyof typeof PILATES_LEVEL_LABEL_KO]}
+                {exercises.length > 0 && (
+                  <span className="text-zinc-500"> — {exercises.map((e) => e.name).join(", ")}</span>
+                )}
+                {p.notes && <span className="text-zinc-500"> ({p.notes})</span>}
+                <span className="ml-2 text-xs text-zinc-400">{p.classDate.toLocaleDateString("ko-KR")}</span>
+              </li>
+            );
+          })}
+          {member.pilatesRecords.length === 0 && <li className="text-zinc-400">기록 없음</li>}
+        </ul>
+      </Section>
+
+      <Section title="패시브 스트레칭 기록">
+        <form action={stretchLogAction} className="mb-4 flex flex-wrap items-end gap-2">
+          <MiniField label="부위" name="bodyPart" required placeholder="햄스트링" />
+          <MiniField label="강도(1-5)" name="intensity" type="number" />
+          <MiniField label="ROM 전" name="romBefore" type="number" />
+          <MiniField label="ROM 후" name="romAfter" type="number" />
+          <MiniField label="통증 전(0-10)" name="painBefore" type="number" />
+          <MiniField label="통증 후(0-10)" name="painAfter" type="number" />
+          <button type="submit" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium">
+            기록
+          </button>
+        </form>
+        <ul className="flex flex-col gap-2 text-sm">
+          {member.stretchLogs.map((s) => (
+            <li key={s.id} className="rounded-lg border border-zinc-200 p-2">
+              <span className="font-medium">{s.bodyPart}</span> · 강도 {s.intensity}/5
+              {s.romBefore != null && s.romAfter != null && (
+                <span className="text-zinc-500">
+                  {" "}
+                  · ROM {s.romBefore}° → {s.romAfter}°
+                </span>
+              )}
+              {s.painBefore != null && s.painAfter != null && (
+                <span className="text-zinc-500">
+                  {" "}
+                  · 통증 {s.painBefore} → {s.painAfter}
+                </span>
+              )}
+              <span className="ml-2 text-xs text-zinc-400">{s.sessionDate.toLocaleDateString("ko-KR")}</span>
+            </li>
+          ))}
+          {member.stretchLogs.length === 0 && <li className="text-zinc-400">기록 없음</li>}
         </ul>
       </Section>
 

@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
 import * as memberService from "@/lib/services/members";
-import type { Gender, PaymentMethod, SessionType } from "@/lib/types";
+import * as ptService from "@/lib/services/pt";
+import * as pilatesService from "@/lib/services/pilates";
+import * as stretchingService from "@/lib/services/stretching";
+import type { Gender, PaymentMethod, PilatesEquipment, PilatesLevel, SessionType } from "@/lib/types";
 
 export async function createMemberAction(formData: FormData) {
   const session = await getSession();
@@ -116,5 +119,82 @@ export async function checkInAction(memberId: string, formData: FormData) {
   });
 
   await writeAuditLog({ userId: session.sub, action: "attendance.checkIn", entityType: "Member", entityId: memberId });
+  revalidatePath(`/members/${memberId}`);
+}
+
+export async function addExerciseLogAction(memberId: string, formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const reps = Number(formData.get("reps"));
+  const weightKg = Number(formData.get("weightKg"));
+  await ptService.addExerciseLog({
+    memberId,
+    exerciseName: String(formData.get("exerciseName") ?? "").trim(),
+    sets: [{ reps: Number.isFinite(reps) ? reps : 0, weightKg: Number.isFinite(weightKg) ? weightKg : undefined }],
+    notes: String(formData.get("notes") ?? ""),
+    trainerId: session.sub,
+  });
+
+  await writeAuditLog({ userId: session.sub, action: "exerciseLog.create", entityType: "Member", entityId: memberId });
+  revalidatePath(`/members/${memberId}`);
+}
+
+export async function addPersonalRecordAction(memberId: string, formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const value = Number(formData.get("value"));
+  await ptService.addPersonalRecord({
+    memberId,
+    exerciseName: String(formData.get("exerciseName") ?? "").trim(),
+    value: Number.isFinite(value) ? value : 0,
+    unit: String(formData.get("unit") ?? "kg"),
+  });
+
+  await writeAuditLog({ userId: session.sub, action: "personalRecord.create", entityType: "Member", entityId: memberId });
+  revalidatePath(`/members/${memberId}`);
+}
+
+export async function addPilatesRecordAction(memberId: string, formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const exerciseName = String(formData.get("exerciseName") ?? "").trim();
+  await pilatesService.addPilatesRecord({
+    memberId,
+    equipment: String(formData.get("equipment") ?? "REFORMER") as PilatesEquipment,
+    level: String(formData.get("level") ?? "BEGINNER") as PilatesLevel,
+    exercises: exerciseName ? [{ name: exerciseName }] : [],
+    notes: String(formData.get("notes") ?? ""),
+    trainerId: session.sub,
+  });
+
+  await writeAuditLog({ userId: session.sub, action: "pilatesRecord.create", entityType: "Member", entityId: memberId });
+  revalidatePath(`/members/${memberId}`);
+}
+
+export async function addStretchLogAction(memberId: string, formData: FormData) {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const intensity = Number(formData.get("intensity"));
+  const romBefore = Number(formData.get("romBefore"));
+  const romAfter = Number(formData.get("romAfter"));
+  const painBefore = Number(formData.get("painBefore"));
+  const painAfter = Number(formData.get("painAfter"));
+  await stretchingService.addStretchLog({
+    memberId,
+    bodyPart: String(formData.get("bodyPart") ?? "").trim(),
+    intensity: Number.isFinite(intensity) ? intensity : 3,
+    romBefore: Number.isFinite(romBefore) ? romBefore : undefined,
+    romAfter: Number.isFinite(romAfter) ? romAfter : undefined,
+    painBefore: Number.isFinite(painBefore) ? painBefore : undefined,
+    painAfter: Number.isFinite(painAfter) ? painAfter : undefined,
+    notes: String(formData.get("notes") ?? ""),
+    trainerId: session.sub,
+  });
+
+  await writeAuditLog({ userId: session.sub, action: "stretchLog.create", entityType: "Member", entityId: memberId });
   revalidatePath(`/members/${memberId}`);
 }
