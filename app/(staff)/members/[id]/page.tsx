@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { getMemberDetail } from "@/lib/services/members";
 import {
   PAYMENT_METHOD_LABEL_KO,
@@ -6,6 +7,7 @@ import {
   SESSION_TYPE_LABEL_KO,
   SESSION_TYPES,
 } from "@/lib/types";
+import { PROGRAM_META, type ProgramType } from "@/lib/pose/programs";
 import { addPackageAction, addPainRecordAction, addPaymentAction, checkInAction, updateMemberAction } from "../actions";
 
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -204,6 +206,24 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             </li>
           ))}
           {member.attendance.length === 0 && <li className="text-zinc-400">출석 기록 없음</li>}
+        </ul>
+      </Section>
+
+      <Section title="자세 분석 기록">
+        <Link
+          href={`/analyze?memberId=${member.id}`}
+          className="mb-4 inline-block w-fit rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
+        >
+          새로 측정하기
+        </Link>
+        <ul className="flex flex-col gap-2 text-sm">
+          {member.postureResults.map((p) => (
+            <li key={p.id} className="rounded-lg border border-zinc-200 p-2">
+              {PROGRAM_META[p.programType as ProgramType]?.label ?? p.programType} · 정면 {p.frontScore}점 · 측면{" "}
+              {p.sideScore}점 · {p.measuredAt.toLocaleDateString("ko-KR")}
+            </li>
+          ))}
+          {member.postureResults.length === 0 && <li className="text-zinc-400">측정 기록 없음</li>}
         </ul>
       </Section>
     </div>

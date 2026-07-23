@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
 import { ReadingRow, ScoreGauge } from "@/components/ResultsReport";
@@ -68,6 +69,18 @@ function clearPersistedSession() {
 }
 
 export default function AnalyzePage() {
+  return (
+    <Suspense fallback={null}>
+      <AnalyzePageInner />
+    </Suspense>
+  );
+}
+
+function AnalyzePageInner() {
+  const searchParams = useSearchParams();
+  const memberId = searchParams.get("memberId");
+  const [savedToMember, setSavedToMember] = useState(false);
+  const [saveToMemberState, setSaveToMemberState] = useState<"idle" | "saving" | "error">("idle");
   const [step, setStep] = useState<Step>("select-program");
   // Once true, the camera stays mounted (just hidden) for the rest of the page's
   // lifetime, even across "새로 측정하기" resets and errors — getUserMedia should
@@ -175,7 +188,26 @@ export default function AnalyzePage() {
     setActionErrorMsg(null);
     reportCanvasRef.current = null;
     clearPersistedSession();
+    setSavedToMember(false);
+    setSaveToMemberState("idle");
     setStep("select-program");
+  }
+
+  async function handleSaveToMember() {
+    if (!memberId || !programType || !frontResult || !sideResult) return;
+    setSaveToMemberState("saving");
+    try {
+      const res = await fetch(`/api/members/${memberId}/posture`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ programType, frontResult, sideResult }),
+      });
+      if (!res.ok) throw new Error("저장에 실패했습니다.");
+      setSavedToMember(true);
+      setSaveToMemberState("idle");
+    } catch {
+      setSaveToMemberState("error");
+    }
   }
 
   // Build the report image (and PDF) proactively as soon as results are ready,
@@ -345,6 +377,16 @@ export default function AnalyzePage() {
           <Methodology />
 
           <div className="flex flex-col items-center gap-2 print:hidden">
+            {memberId && (
+              <button
+                onClick={handleSaveToMember}
+                disabled={savedToMember || saveToMemberState === "saving"}
+                className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {savedToMember ? "✓ 회원 기록에 저장됨" : saveToMemberState === "saving" ? "저장 중…" : "회원 기록에 저장"}
+              </button>
+            )}
+            {saveToMemberState === "error" && <p className="text-sm text-rose-600">회원 기록 저장에 실패했습니다.</p>}
             <div className="flex flex-wrap justify-center gap-3">
               <button
                 onClick={() => setShowReportModal(true)}
@@ -353,9 +395,18 @@ export default function AnalyzePage() {
               >
                 {reportDataUrl || reportBuildError ? "리포트 보기·저장" : "리포트 준비 중…"}
               </button>
-              <button onClick={reset} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
-                새로 측정하기
-              </button>
+              {memberId ? (
+                <Link
+                  href={`/members/${memberId}`}
+                  className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium"
+                >
+                  회원 페이지로 돌아가기
+                </Link>
+              ) : (
+                <button onClick={reset} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
+                  새로 측정하기
+                </button>
+              )}
             </div>
             {reportBuildError && <p className="text-sm text-rose-600">리포트 생성 실패: {reportBuildError}</p>}
           </div>
