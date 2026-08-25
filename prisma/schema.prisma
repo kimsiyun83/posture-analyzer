@@ -47,6 +47,7 @@ model User {
   aiReports         AiReport[]
   notifications     Notification[]
   auditLogs         AuditLog[]
+  naverAdAccountsCreated NaverAdAccount[]
 }
 
 // ---------- Members (clients) ----------
@@ -360,4 +361,83 @@ model AuditLog {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// ---------- Naver 검색광고 자동화 ----------
+// One connected 네이버 검색광고 (searchad.naver.com) advertiser account per row.
+// secretKeyEnc holds the SECRET_KEY encrypted at rest (see lib/services/naverAds/crypto.ts) —
+// never store it in plaintext since it signs requests that can move ad spend.
+// autoExecute is a hard kill switch: even when a rule is `active`, the rule engine only
+// applies live changes when the *account's* autoExecute is also true. Both default to
+// false so nothing runs live until a staff member explicitly opts in twice.
+
+model NaverAdAccount {
+  id           String   @id @default(cuid())
+  label        String // e.g. "OO필라테스 네이버광고"
+  customerId   String // CUSTOMER_ID (광고주 고객번호)
+  apiKey       String // ACCESS LICENSE (X-API-KEY)
+  secretKeyEnc String // encrypted SECRET_KEY, format: base64(iv):base64(authTag):base64(ciphertext)
+  autoExecute  Boolean  @default(false) // kill switch — false = proposals only, never calls write APIs
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  rules            AdAutomationRule[]
+  runLogs          AdRunLog[]
+  keywordSnapshots AdKeywordSnapshot[]
+}
+
+model AdAutomationRule {
+  id            String   @id @default(cuid())
+  accountId     String
+  account       NaverAdAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name          String
+  ruleType      String // "BID_CEILING" | "PAUSE_NO_CONVERSION" | "DAILY_BUDGET_GUARD"
+  targetLevel   String // "CAMPAIGN" | "ADGROUP"
+  naverTargetId String // nccCampaignId or nccAdgroupId depending on targetLevel
+  paramsJson    Json // rule-specific thresholds, e.g. { maxCpc, stepPercent, minBid, lookbackDays, costThreshold, dailyBudgetCap }
+  active        Boolean  @default(false) // must be explicitly turned on per rule (in addition to account.autoExecute)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  runLogs AdRunLog[]
+
+  @@index([accountId])
+}
+
+model AdRunLog {
+  id         String            @id @default(cuid())
+  accountId  String
+  account    NaverAdAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ruleId     String?
+  rule       AdAutomationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  mode       String // "SIMULATED" | "LIVE"
+  outcome    String // "PROPOSED" | "APPLIED" | "SKIPPED" | "ERROR"
+  summary    String
+  detailJson Json?
+  runAt      DateTime @default(now())
+
+  @@index([accountId])
+  @@index([runAt])
+}
+
+// Cached results of the 네이버 검색광고 키워드 도구 (파워링크 연관키워드 분석).
+model AdKeywordSnapshot {
+  id                    String          @id @default(cuid())
+  accountId             String?
+  account               NaverAdAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  keyword               String
+  monthlyPcSearches     Int?
+  monthlyMobileSearches Int?
+  competitionLevel      String? // compIdx: "낮음" | "중간" | "높음"
+  avgPcCtr              Float?
+  avgMobileCtr          Float?
+  avgAdDepth            Float? // plAvgDepth — 파워링크 평균 노출 광고 수 (경쟁 강도 참고용)
+  capturedAt            DateTime @default(now())
+
+  @@index([keyword])
+  @@index([accountId])
 }

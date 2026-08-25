@@ -68,3 +68,15 @@ export const PILATES_LEVEL_LABEL_KO: Record<PilatesLevel, string> = {
   INTERMEDIATE: "중급",
   ADVANCED: "고급",
 };
+
+export const AD_RULE_TYPES = ["BID_CEILING", "PAUSE_NO_CONVERSION", "DAILY_BUDGET_GUARD"] as const;
+export type AdRuleType = (typeof AD_RULE_TYPES)[number];
+
+export const AD_RULE_TYPE_LABEL_KO: Record<AdRuleType, string> = {
+  BID_CEILING: "입찰가 상한 자동 조정",
+  PAUSE_NO_CONVERSION: "무전환 키워드 자동 정지",
+  DAILY_BUDGET_GUARD: "일 예산 초과 시 캠페인 정지",
+};
+
+export const AD_RULE_TARGET_LEVELS = ["CAMPAIGN", "ADGROUP"] as const;
+export type AdRuleTargetLevel = (typeof AD_RULE_TARGET_LEVELS)[number];

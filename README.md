@@ -52,6 +52,44 @@ Vercel(및 대부분의 서버리스 플랫폼)의 함수는 **파일시스템�
 이 작업을 하지 않으면 정적 페이지(랜딩, `/analyze`)는 정상 동작하지만, 회원
 CRM/예약/결제 등 DB 기반 기능은 배포 환경에서 데이터가 유지되지 않습니다.
 
+## 네이버 검색광고 자동화 (선택 기능)
+
+`/admin/ads`에서 네이버 검색광고(searchad.naver.com) 계정을 연결해 파워링크
+연관키워드를 분석하고, 규칙 기반으로 입찰가·예산·키워드를 자동 관리할 수
+있습니다. 광고주센터 → 도구 → **API 사용 관리**에서 CUSTOMER_ID / API_KEY(액세스
+라이선스) / SECRET_KEY를 발급받아 연결합니다. SECRET_KEY는 AES-256-GCM으로
+암호화되어 DB에 저장되고 화면에 다시 표시되지 않습니다.
+
+**실제 광고비가 오가는 기능이라 이중 안전장치를 기본으로 뒀습니다.** 다음 두
+스위치가 *모두* 켜져 있어야만 실제로 입찰가/예산/키워드가 바뀝니다 — 하나라도
+꺼져 있으면 규칙 실행은 "이렇게 바꾸겠다"는 제안만 `AdRunLog`에 기록하고 아무
+것도 변경하지 않습니다. 둘 다 기본값은 꺼짐입니다.
+1. 계정 단위 "자동 실행" 스위치 (`/admin/ads`에서 계정마다 켜고 끔)
+2. 규칙 단위 "활성화" 스위치 (규칙마다 켜고 끔)
+
+지원 규칙 3종 (`lib/services/naverAds/rules.ts`):
+- **입찰가 상한 자동 조정**: 키워드 CPC가 상한을 넘으면 지정한 비율만큼 입찰가를 낮춤 (최소 입찰가 하한 보장)
+- **무전환 키워드 자동 정지**: 최근 7·30일간 지정 소진액 이상 쓰고 전환이 0건이면 키워드 정지
+- **일 예산 초과 시 캠페인 정지**: 오늘 소진액이 지정 상한을 넘으면 캠페인 정지
+
+규칙 실행은 자동 스케줄이 없는 이 앱 구조상(App Router에는 내장 cron이 없음)
+외부 스케줄러가 `POST /api/cron/naver-ads`를 호출해야 동작합니다. `CRON_SECRET`을
+설정한 뒤 예:
+
+```bash
+# crontab: 매시 정각
+0 * * * * curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://your-domain/api/cron/naver-ads
+```
+
+또는 Vercel을 쓴다면 `vercel.json`에 Cron Job으로 등록해도 됩니다.
+
+**한계**: 네이버 검색광고 API(`lib/services/naverAds/client.ts`)는 공식 문서
+([naver/searchad-apidoc](https://github.com/naver/searchad-apidoc))를 기준으로
+구현했지만, 실제 발급된 API 키로 라이브 검증은 하지 못했습니다 — 이 세션에는
+네이버 검색광고 자격증명이 없었습니다. 계정을 연결한 뒤 "자동 실행"을 켜기 전에,
+먼저 스위치를 끈 상태로 며칠간 제안 로그(`AdRunLog`)를 검토해 필드/응답 형식이
+실제 계정과 맞는지 확인하는 것을 권장합니다.
+
 ## 프로젝트 구조
 
 ```
@@ -60,12 +98,15 @@ app/
     members/[id]/     # 회원 상세: 프로필·병력·통증·회원권·결제·출석·
                        # PT·필라테스·스트레칭·자세분석·인바디·AI리포트
     admin/            # 관리자 전용 (통계, 강사 계정 관리)
+    admin/ads/        # 관리자 전용 — 네이버 검색광고 자동화
   analyze/            # 공개 — 자세 분석 (MediaPipe, 클라이언트 실행)
   api/                # 세션이 필요한 mutation용 API 라우트
+  api/cron/naver-ads/ # 외부 스케줄러가 호출하는 광고 자동화 실행 엔드포인트 (CRON_SECRET)
 lib/
   ai/                 # AiEngine 인터페이스 + 규칙 기반 구현, OCR 파서
   pose/               # 자세 분석 알고리즘 (Kendall plumb-line, CVA 근사 등)
   services/           # DB 접근 계층 (도메인별로 분리)
+  services/naverAds/  # 네이버 검색광고 API 클라이언트 + 규칙 엔진 + 자격증명 암호화
   auth.ts             # 세션/비밀번호 유틸
   rateLimit.ts        # 로그인 무차별 대입 방지 (인메모리)
 prisma/schema.prisma  # 전체 스키마 (users, members, reservations, payments, …)
