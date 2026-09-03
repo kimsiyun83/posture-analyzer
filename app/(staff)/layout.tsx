@@ -33,6 +33,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
                   관리자
                 </Link>
               )}
+              {session.role === "admin" && (
+                <Link href="/admin/ads" className="hover:text-zinc-900">
+                  광고 자동화
+                </Link>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm text-zinc-600">
