@@ -15,6 +15,7 @@ import {
   setAccountAutoExecute,
   setRuleActive,
 } from "@/lib/services/naverAds";
+import { NaverAdApiError } from "@/lib/services/naverAds/client";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -22,21 +23,36 @@ async function requireAdmin() {
   return session;
 }
 
-export async function connectAccountAction(formData: FormData) {
+export interface ActionState {
+  error?: string;
+}
+
+// Thrown errors from a Server Action are redacted to a generic message in
+// production (see Next.js error-handling docs) — useless for a form where
+// the user needs to know *what* was wrong (bad CUSTOMER_ID, Naver API auth
+// failure, etc). So this returns { error } instead of throwing, paired with
+// useActionState on the client (see ConnectAccountForm.tsx).
+export async function connectAccountAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   const session = await requireAdmin();
 
   const label = String(formData.get("label") ?? "").trim();
-  const customerId = String(formData.get("customerId") ?? "").trim();
-  const apiKey = String(formData.get("apiKey") ?? "").trim();
-  const secretKey = String(formData.get("secretKey") ?? "").trim();
+  const customerId = String(formData.get("naverCustomerId") ?? "").trim();
+  const apiKey = String(formData.get("naverApiKey") ?? "").trim();
+  const secretKey = String(formData.get("naverSecretKey") ?? "").trim();
 
   if (!label || !customerId || !apiKey || !secretKey) {
-    throw new Error("계정 이름, CUSTOMER_ID, API_KEY, SECRET_KEY를 모두 입력해주세요.");
+    return { error: "계정 이름, CUSTOMER_ID, API_KEY, SECRET_KEY를 모두 입력해주세요." };
+  }
+  if (!/^\d{6,8}$/.test(customerId)) {
+    return {
+      error: `CUSTOMER_ID는 6~8자리 숫자여야 합니다 (예: 1749296). 입력하신 값 "${customerId}"은(는) 로그인 이메일 등 다른 값이 잘못 들어간 것 같습니다.`,
+    };
   }
 
   const account = await connectAccount({ label, customerId, apiKey, secretKey, createdById: session.sub });
   await writeAuditLog({ userId: session.sub, action: "naverAds.account.connect", entityType: "NaverAdAccount", entityId: account.id });
   revalidatePath("/admin/ads");
+  return {};
 }
 
 export async function setAccountActiveAction(accountId: string, active: boolean) {
@@ -67,7 +83,11 @@ export async function deleteAccountAction(accountId: string) {
   revalidatePath("/admin/ads");
 }
 
-export async function analyzeKeywordsAction(accountId: string, formData: FormData) {
+export async function analyzeKeywordsAction(
+  accountId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   await requireAdmin();
 
   const raw = String(formData.get("seedKeywords") ?? "").trim();
@@ -77,10 +97,24 @@ export async function analyzeKeywordsAction(accountId: string, formData: FormDat
     .filter(Boolean)
     .slice(0, 5); // Naver API limits hintKeywords to 5 per call
 
-  if (seedKeywords.length === 0) throw new Error("분석할 키워드를 1개 이상 입력해주세요.");
+  if (seedKeywords.length === 0) return { error: "분석할 키워드를 1개 이상 입력해주세요." };
 
-  await analyzeKeywords(accountId, seedKeywords);
+  try {
+    await analyzeKeywords(accountId, seedKeywords);
+  } catch (err) {
+    if (err instanceof NaverAdApiError) {
+      if (err.status === 401 || err.status === 403) {
+        return {
+          error:
+            "네이버 API 인증에 실패했습니다 (401/403). CUSTOMER_ID·API_KEY·SECRET_KEY가 올바른지, 특히 CUSTOMER_ID가 이메일이 아닌 숫자인지 확인해주세요.",
+        };
+      }
+      return { error: `네이버 API 오류 (${err.status}): ${JSON.stringify(err.body)}` };
+    }
+    return { error: `키워드 분석 중 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}` };
+  }
   revalidatePath("/admin/ads");
+  return {};
 }
 
 export async function createRuleAction(accountId: string, formData: FormData) {

@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { listAccounts, listKeywordSnapshots, listRules, listRunLogs } from "@/lib/services/naverAds";
 import { AD_RULE_TYPE_LABEL_KO, type AdRuleType } from "@/lib/types";
 import {
-  analyzeKeywordsAction,
-  connectAccountAction,
   createRuleAction,
   deleteAccountAction,
   deleteRuleAction,
@@ -13,6 +11,8 @@ import {
   setAccountAutoExecuteAction,
   setRuleActiveAction,
 } from "./actions";
+import ConnectAccountForm from "./ConnectAccountForm";
+import KeywordAnalysisForm from "./KeywordAnalysisForm";
 
 export default async function NaverAdsPage() {
   const session = await getSession();
@@ -40,15 +40,7 @@ export default async function NaverAdsPage() {
 
       <section>
         <h2 className="mb-3 font-semibold text-zinc-900">광고 계정 연결</h2>
-        <form action={connectAccountAction} className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-zinc-200 p-3">
-          <Field label="계정 이름" name="label" placeholder="OO스튜디오 네이버광고" required />
-          <Field label="CUSTOMER_ID" name="customerId" required />
-          <Field label="API_KEY (액세스 라이선스)" name="apiKey" required />
-          <Field label="SECRET_KEY" name="secretKey" type="password" required />
-          <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white">
-            연결
-          </button>
-        </form>
+        <ConnectAccountForm />
         <p className="mb-4 text-xs text-zinc-500">
           네이버 검색광고 관리자센터 → 도구 → API 사용 관리에서 발급받을 수 있습니다. SECRET_KEY는 서버에 암호화되어
           저장되며 화면에 다시 표시되지 않습니다.
@@ -120,24 +112,11 @@ export default async function NaverAdsPage() {
 
 async function KeywordTool({ accountId }: { accountId: string }) {
   const snapshots = await listKeywordSnapshots(accountId, 30);
-  const analyzeAction = analyzeKeywordsAction.bind(null, accountId);
 
   return (
     <div className="mt-4">
       <h3 className="mb-2 text-sm font-semibold text-zinc-900">파워링크 키워드 분석</h3>
-      <form action={analyzeAction} className="mb-3 flex flex-wrap items-end gap-2">
-        <div className="flex-1 min-w-[240px]">
-          <label className="text-xs text-zinc-500">시드 키워드 (쉼표로 구분, 최대 5개)</label>
-          <input
-            name="seedKeywords"
-            placeholder="필라테스, 자세교정, PT"
-            className="mt-0.5 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
-          />
-        </div>
-        <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white">
-          분석
-        </button>
-      </form>
+      <KeywordAnalysisForm accountId={accountId} />
 
       {snapshots.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-zinc-200">
@@ -303,12 +282,16 @@ function Field({
   type = "text",
   required = false,
   placeholder,
+  pattern,
+  title,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   placeholder?: string;
+  pattern?: string;
+  title?: string;
 }) {
   return (
     <div>
@@ -318,6 +301,14 @@ function Field({
         type={type}
         required={required}
         placeholder={placeholder}
+        pattern={pattern}
+        title={title}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
         className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
       />
     </div>
