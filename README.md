@@ -12,7 +12,7 @@ AI 기반 상담노트/운동·식단 추천, InBody OCR, PDF 리포트, 관리�
 
 | 영역 | 원안 | 실제 구현 | 비고 |
 |---|---|---|---|
-| DB | Supabase Postgres | Prisma + SQLite (libSQL) | `prisma/schema.prisma`의 `provider`만 바꾸면 Postgres로 전환 |
+| DB | Supabase Postgres | Prisma + PostgreSQL (`@prisma/adapter-pg`) | Vercel Postgres 등 아무 Postgres URL이든 `DATABASE_URL`만 바꾸면 됨 |
 | 인증 | Supabase Auth | bcrypt + JWT(jose) 세션 쿠키 | 외부 서비스 없음 |
 | 체형/자세 분석 AI | OpenAI Vision | MediaPipe Pose (브라우저 내 실행) | 이미 프로덕션에서 사용 중이던 기능 재사용 |
 | 인바디 OCR | OpenAI Vision | Tesseract.js (브라우저 내 실행) | `lib/ai/ocr.ts`가 라벨 기반으로 수치 파싱 |
@@ -24,10 +24,15 @@ AI 기반 상담노트/운동·식단 추천, InBody OCR, PDF 리포트, 관리�
 
 ## 시작하기
 
+DB는 PostgreSQL입니다 — 로컬 개발도 Postgres 인스턴스가 하나 필요합니다 (Docker로
+무료로 띄울 수 있습니다):
+
 ```bash
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+
 npm install                 # postinstall이 MediaPipe wasm 자산도 함께 준비합니다
-cp .env.example .env        # JWT_SECRET 등 값을 채워주세요
-npx prisma migrate dev      # 로컬 SQLite DB 생성
+cp .env.example .env        # DATABASE_URL, JWT_SECRET 등 값을 채워주세요
+npx prisma migrate dev      # 스키마 적용
 npx tsx prisma/seed.ts      # 최초 관리자 계정 생성 (기본: admin@studio.local / changeme123)
 npm run dev
 ```
@@ -36,21 +41,18 @@ npm run dev
 사용할 수 있습니다. `/` 와 `/analyze` (자세 분석)는 로그인 없이 공개되어 있습니다
 (트레이너가 워크인 고객에게 바로 보여주는 용도).
 
-## 배포 시 반드시 알아야 할 점 — SQLite는 프로덕션에서 그대로 쓸 수 없습니다
+## 배포 (Vercel + Postgres)
 
-Vercel(및 대부분의 서버리스 플랫폼)의 함수는 **파일시스템이 요청마다 초기화**됩니다.
-로컬 SQLite 파일(`prisma/dev.db`)은 로컬 개발에는 완벽하지만, Vercel에 그대로
-배포하면 저장한 데이터가 다음 요청/콜드스타트 때 사라집니다.
-
-**해결 방법 (선택)**:
 1. Vercel 대시보드 → 이 프로젝트 → Storage 탭에서 **Postgres**를 추가합니다
-   (Hobby 요금제 무료, 기존 Vercel 계정 그대로 사용 — 신규 가입 불필요).
-2. `prisma/schema.prisma`에서 `provider = "sqlite"` → `"postgresql"`로 변경합니다.
-3. Vercel이 발급한 `DATABASE_URL`을 프로젝트 환경변수에 설정합니다.
-4. `npx prisma migrate deploy`로 마이그레이션을 적용합니다.
+   (Hobby 요금제 무료, 기존 Vercel 계정 그대로 사용 — 신규 가입 불필요). 연결하면
+   `DATABASE_URL`이 프로젝트 환경변수에 자동으로 설정됩니다.
+2. `npx prisma migrate deploy`로 마이그레이션을 적용합니다 (Vercel 빌드 중 자동
+   실행은 안 되므로, 처음 한 번은 `DATABASE_URL`을 Vercel 값으로 맞춰서 로컬에서
+   실행하거나, 배포 파이프라인에 이 명령을 추가하세요).
 
-이 작업을 하지 않으면 정적 페이지(랜딩, `/analyze`)는 정상 동작하지만, 회원
-CRM/예약/결제 등 DB 기반 기능은 배포 환경에서 데이터가 유지되지 않습니다.
+Vercel(및 대부분의 서버리스 플랫폼)의 함수는 **파일시스템이 요청마다 초기화**되므로
+SQLite 같은 파일 기반 DB는 애초에 쓸 수 없습니다 — 그래서 이 프로젝트는 처음부터
+Postgres를 기본값으로 씁니다.
 
 ## 네이버 검색광고 자동화 (선택 기능)
 
@@ -143,6 +145,6 @@ docker build -t studio-platform .
 docker run -p 3000:3000 --env-file .env studio-platform
 ```
 
-SQLite 파일을 컨테이너 밖에 유지하려면 `-v $(pwd)/prisma:/app/prisma` 로 볼륨을
-마운트하세요. 프로덕션에서는 위 "배포 시 반드시 알아야 할 점"을 따라 Postgres
-사용을 권장합니다.
+`.env`의 `DATABASE_URL`이 접근 가능한 Postgres 인스턴스를 가리키고 있어야 합니다
+(컨테이너 안에서 `localhost`는 컨테이너 자신을 가리키므로, 로컬 Postgres를 쓴다면
+`host.docker.internal`을 사용하세요).

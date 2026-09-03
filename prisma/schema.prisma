@@ -1,10 +1,8 @@
-// Full platform schema. Provider is SQLite for zero-cost local/dev use — every
-// field type used here (String, Int, Float, Boolean, DateTime, Json) is also valid
-// on PostgreSQL, so switching `provider = "sqlite"` -> `"postgresql"` and pointing
-// DATABASE_URL at a real Postgres instance (e.g. Vercel Postgres/Neon, free tier)
-// is the only change needed to move to production-grade storage. No enums are used
-// (SQLite has no native enum type) — allowed values are documented per field and
-// enforced in the app layer via TypeScript literal unions in lib/types.ts.
+// Full platform schema. Provider is PostgreSQL for production (Vercel Postgres/Neon/etc,
+// pointed at by DATABASE_URL) — was SQLite for zero-cost local/dev during initial build.
+// No enums are used (kept consistent with the original SQLite-compatible design) —
+// allowed values are documented per field and enforced in the app layer via TypeScript
+// literal unions in lib/types.ts.
 
 generator client {
   provider = "prisma-client"
@@ -12,7 +10,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ---------- Staff accounts (trainers/admins) ----------
