@@ -117,16 +117,31 @@ export async function analyzeKeywordsAction(
   return {};
 }
 
-export async function createRuleAction(accountId: string, formData: FormData) {
+export async function createRuleAction(
+  accountId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
   const session = await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
   const ruleType = String(formData.get("ruleType") ?? "");
-  const targetLevel = String(formData.get("targetLevel") ?? "");
-  const naverTargetId = String(formData.get("naverTargetId") ?? "").trim();
+
+  // targetChoice ("LEVEL::id") comes from the dropdown populated with the account's real
+  // campaigns/ad groups (see RuleTargetPicker.tsx). If that fetch failed or the account has
+  // nothing yet, the form falls back to separate targetLevel/naverTargetId text fields.
+  const targetChoice = String(formData.get("targetChoice") ?? "");
+  let targetLevel: string;
+  let naverTargetId: string;
+  if (targetChoice && targetChoice.includes("::")) {
+    [targetLevel, naverTargetId] = targetChoice.split("::");
+  } else {
+    targetLevel = String(formData.get("targetLevel") ?? "");
+    naverTargetId = String(formData.get("naverTargetId") ?? "").trim();
+  }
 
   if (!name || !ruleType || !targetLevel || !naverTargetId) {
-    throw new Error("규칙 이름, 유형, 대상 레벨, 네이버 캠페인/그룹 ID를 모두 입력해주세요.");
+    return { error: "규칙 이름, 유형, 대상(캠페인/광고그룹)을 모두 입력해주세요." };
   }
 
   const num = (field: string) => {
@@ -149,6 +164,7 @@ export async function createRuleAction(accountId: string, formData: FormData) {
   const rule = await createRule({ accountId, name, ruleType, targetLevel, naverTargetId, params });
   await writeAuditLog({ userId: session.sub, action: "naverAds.rule.create", entityType: "AdAutomationRule", entityId: rule.id, detail: params });
   revalidatePath("/admin/ads");
+  return {};
 }
 
 export async function setRuleActiveAction(ruleId: string, active: boolean) {

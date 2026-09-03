@@ -1,9 +1,15 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { listAccounts, listKeywordSnapshots, listRules, listRunLogs } from "@/lib/services/naverAds";
+import {
+  listAccounts,
+  listCampaignTargetOptions,
+  listKeywordSnapshots,
+  listRules,
+  listRunLogs,
+  type CampaignTargetOption,
+} from "@/lib/services/naverAds";
 import { AD_RULE_TYPE_LABEL_KO, type AdRuleType } from "@/lib/types";
 import {
-  createRuleAction,
   deleteAccountAction,
   deleteRuleAction,
   runNowAction,
@@ -13,6 +19,7 @@ import {
 } from "./actions";
 import ConnectAccountForm from "./ConnectAccountForm";
 import KeywordAnalysisForm from "./KeywordAnalysisForm";
+import CreateRuleForm from "./CreateRuleForm";
 
 export default async function NaverAdsPage() {
   const session = await getSession();
@@ -150,49 +157,34 @@ async function KeywordTool({ accountId }: { accountId: string }) {
 
 async function RuleSection({ accountId }: { accountId: string }) {
   const rules = await listRules(accountId);
-  const createAction = createRuleAction.bind(null, accountId);
+
+  // Best-effort: this calls the live Naver API. If it fails (rotated key, network hiccup,
+  // API-side issue), fall back to manual ID entry rather than breaking the whole page.
+  let targetOptions: CampaignTargetOption[] = [];
+  let targetFetchError: string | null = null;
+  try {
+    targetOptions = await listCampaignTargetOptions(accountId);
+  } catch (err) {
+    targetFetchError = err instanceof Error ? err.message : String(err);
+  }
 
   return (
     <div className="mt-4">
       <h3 className="mb-2 text-sm font-semibold text-zinc-900">자동화 규칙</h3>
 
-      <form action={createAction} className="mb-3 flex flex-col gap-2 rounded-lg border border-zinc-200 p-3">
-        <div className="flex flex-wrap gap-2">
-          <Field label="규칙 이름" name="name" placeholder="예: 파워링크 입찰가 상한" required />
-          <div>
-            <label className="text-xs text-zinc-500">규칙 유형</label>
-            <select name="ruleType" className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
-              {(Object.entries(AD_RULE_TYPE_LABEL_KO) as [AdRuleType, string][]).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-zinc-500">대상 레벨</label>
-            <select name="targetLevel" className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm">
-              <option value="ADGROUP">광고그룹</option>
-              <option value="CAMPAIGN">캠페인</option>
-            </select>
-          </div>
-          <Field label="네이버 캠페인/그룹 ID" name="naverTargetId" placeholder="cmp-a001-... / grp-a001-..." required />
-        </div>
+      {targetFetchError && (
+        <p className="mb-2 text-xs text-amber-600">
+          네이버 계정에서 캠페인/광고그룹 목록을 불러오지 못했습니다 ({targetFetchError}) — 아래에서 ID를 직접
+          입력해주세요.
+        </p>
+      )}
+      {targetOptions.length === 0 && !targetFetchError && (
+        <p className="mb-2 text-xs text-zinc-400">
+          이 계정에 아직 캠페인이 없어 목록을 불러올 수 없습니다 — ID를 직접 입력해주세요.
+        </p>
+      )}
 
-        <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-2">
-          <Field label="최대 CPC(원) — 입찰가 상한용" name="maxCpc" type="number" />
-          <Field label="인하 비율(%) — 입찰가 상한용" name="stepPercent" type="number" placeholder="10" />
-          <Field label="최소 입찰가(원) — 입찰가 상한용" name="minBid" type="number" placeholder="70" />
-          <Field label="조회 기간(7 또는 30일) — 무전환 정지용" name="lookbackDays" type="number" placeholder="7" />
-          <Field label="소진액 기준(원) — 무전환 정지용" name="costThreshold" type="number" />
-          <Field label="일 예산 상한(원) — 예산 초과 정지용" name="dailyBudgetCap" type="number" />
-        </div>
-        <p className="text-xs text-zinc-400">규칙 유형에 해당하는 항목만 입력하면 됩니다.</p>
-
-        <button type="submit" className="self-start rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white">
-          규칙 추가
-        </button>
-      </form>
+      <CreateRuleForm accountId={accountId} targetOptions={targetOptions} />
 
       {rules.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-zinc-200">
@@ -272,45 +264,6 @@ async function RunLogSection({ accountId }: { accountId: string }) {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  required = false,
-  placeholder,
-  pattern,
-  title,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  required?: boolean;
-  placeholder?: string;
-  pattern?: string;
-  title?: string;
-}) {
-  return (
-    <div>
-      <label className="text-xs text-zinc-500">{label}</label>
-      <input
-        name={name}
-        type={type}
-        required={required}
-        placeholder={placeholder}
-        pattern={pattern}
-        title={title}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        data-1p-ignore
-        data-lpignore="true"
-        className="mt-0.5 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
-      />
     </div>
   );
 }

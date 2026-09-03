@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { decryptSecret, encryptSecret } from "./crypto";
-import { getRelatedKeywords, type NaverAdCredentials, type RelatedKeywordStat } from "./client";
+import {
+  getRelatedKeywords,
+  listAdGroups,
+  listCampaigns,
+  type NaverAdCredentials,
+  type RelatedKeywordStat,
+} from "./client";
 import { runRule } from "./rules";
 
 function toCreds(account: { customerId: string; apiKey: string; secretKeyEnc: string }): NaverAdCredentials {
@@ -78,6 +84,45 @@ export function listKeywordSnapshots(accountId: string, limit = 100) {
     orderBy: { capturedAt: "desc" },
     take: limit,
   });
+}
+
+// ---------- 캠페인/광고그룹 조회 (규칙 대상 선택용 참고 목록) ----------
+
+export interface CampaignTargetOption {
+  targetLevel: "CAMPAIGN" | "ADGROUP";
+  naverTargetId: string;
+  label: string;
+}
+
+// Best-effort — this hits the live Naver API, so a bad/rotated credential or a
+// transient failure shouldn't break the whole rule-builder UI. Callers should
+// treat an empty array as "couldn't fetch, enter the ID manually" rather than
+// "this account has no campaigns."
+export async function listCampaignTargetOptions(accountId: string): Promise<CampaignTargetOption[]> {
+  const account = await prisma.naverAdAccount.findUniqueOrThrow({ where: { id: accountId } });
+  const creds = toCreds(account);
+
+  const campaigns = await listCampaigns(creds);
+  const options: CampaignTargetOption[] = [];
+
+  for (const campaign of campaigns) {
+    options.push({
+      targetLevel: "CAMPAIGN",
+      naverTargetId: campaign.nccCampaignId,
+      label: `[캠페인] ${campaign.name} (${campaign.nccCampaignId})`,
+    });
+
+    const adGroups = await listAdGroups(creds, campaign.nccCampaignId);
+    for (const adGroup of adGroups) {
+      options.push({
+        targetLevel: "ADGROUP",
+        naverTargetId: adGroup.nccAdgroupId,
+        label: `  ㄴ [광고그룹] ${campaign.name} / ${adGroup.name} (${adGroup.nccAdgroupId})`,
+      });
+    }
+  }
+
+  return options;
 }
 
 // ---------- 자동화 규칙 ----------
