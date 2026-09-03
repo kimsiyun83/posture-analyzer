@@ -41,9 +41,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm text-zinc-600">
-            <span>
+            <Link href="/account" className="hover:text-zinc-900">
               {session.name} ({session.role === "admin" ? "관리자" : "트레이너"})
-            </span>
+            </Link>
             <SignOutButton />
           </div>
         </div>
