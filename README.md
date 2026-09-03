@@ -43,12 +43,15 @@ npm run dev
 
 ## 배포 (Vercel + Postgres)
 
-1. Vercel 대시보드 → 이 프로젝트 → Storage 탭에서 **Postgres**를 추가합니다
-   (Hobby 요금제 무료, 기존 Vercel 계정 그대로 사용 — 신규 가입 불필요). 연결하면
-   `DATABASE_URL`이 프로젝트 환경변수에 자동으로 설정됩니다.
-2. `npx prisma migrate deploy`로 마이그레이션을 적용합니다 (Vercel 빌드 중 자동
-   실행은 안 되므로, 처음 한 번은 `DATABASE_URL`을 Vercel 값으로 맞춰서 로컬에서
-   실행하거나, 배포 파이프라인에 이 명령을 추가하세요).
+1. Vercel 대시보드 → 이 프로젝트 → Storage 탭에서 Postgres를 추가합니다 (Vercel
+   Postgres든 Prisma Postgres든 무료 요금제로 충분합니다). 프로젝트에 연결하면
+   `DATABASE_URL`이 환경변수에 자동으로 설정됩니다.
+2. 그걸로 끝입니다 — `build` 스크립트가 `prisma generate && prisma migrate deploy
+   && next build` 순서로 실행되므로, Vercel이 빌드할 때마다 최신 마이그레이션이
+   자동으로 적용됩니다. 별도로 로컬에서 `migrate deploy`를 실행할 필요 없습니다.
+3. 최초 관리자 계정은 자동 생성되지 않습니다 — `npx tsx prisma/seed.ts`를
+   `DATABASE_URL`을 프로덕션 값으로 맞춰서 한 번 실행하거나, 프로덕션 DB에 직접
+   `User` 레코드를 만들어야 합니다 (비밀번호는 bcrypt 해시로 저장됩니다).
 
 Vercel(및 대부분의 서버리스 플랫폼)의 함수는 **파일시스템이 요청마다 초기화**되므로
 SQLite 같은 파일 기반 DB는 애초에 쓸 수 없습니다 — 그래서 이 프로젝트는 처음부터
