@@ -1,12 +1,15 @@
 import { NextRequest } from "next/server";
 import { runAutomationForAllAccounts } from "@/lib/services/naverAds";
 
-// Triggered by an external scheduler (cron/systemd timer/GitHub Actions schedule — this
-// app has no built-in cron). See README for a crontab example. Every rule run still
-// respects the account.autoExecute + rule.active double gate (see lib/services/naverAds/rules.ts),
-// so hitting this endpoint is safe even before any account has live automation turned on —
-// it will just record SIMULATED proposals.
-export async function POST(request: NextRequest) {
+// Triggered on a schedule. Vercel Cron (see vercel.json) invokes this with GET and
+// automatically sends `Authorization: Bearer $CRON_SECRET` — no extra setup beyond
+// the CRON_SECRET env var. POST is also supported for an external scheduler
+// (cron-job.org, a GitHub Actions schedule, etc) that can be configured with a custom
+// header instead. Every rule run still respects the account.autoExecute + rule.active
+// double gate (see lib/services/naverAds/rules.ts), so hitting this endpoint is safe
+// even before any account has live automation turned on — it just records SIMULATED
+// proposals.
+async function handleCronRequest(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return Response.json({ error: "CRON_SECRET이 설정되지 않았습니다." }, { status: 500 });
@@ -20,3 +23,6 @@ export async function POST(request: NextRequest) {
   const result = await runAutomationForAllAccounts();
   return Response.json({ ok: true, ...result });
 }
+
+export const GET = handleCronRequest;
+export const POST = handleCronRequest;

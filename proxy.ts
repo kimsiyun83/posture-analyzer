@@ -10,6 +10,10 @@ function isPublic(pathname: string): boolean {
   // tool doesn't require staff login.
   if (pathname === "/" || pathname.startsWith("/analyze")) return true;
   if (pathname.startsWith("/_next") || pathname.startsWith("/mediapipe") || pathname === "/favicon.ico") return true;
+  // Called by Vercel Cron / an external scheduler, never by a logged-in staff
+  // session — it authenticates itself via the CRON_SECRET bearer token checked
+  // inside the route handler, not the staff session cookie.
+  if (pathname === "/api/cron/naver-ads") return true;
   return false;
 }
 
