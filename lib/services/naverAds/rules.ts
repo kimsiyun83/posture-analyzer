@@ -1,21 +1,20 @@
 import { prisma } from "@/lib/db";
 import type { NaverAdAccount, AdAutomationRule } from "@/lib/generated/prisma/client";
-import type { NaverAdCredentials } from "./client";
-import {
-  getAdGroup,
-  getCampaign,
-  getStats,
-  listKeywords,
-  setCampaignStatus,
-  setKeywordLock,
-  updateKeywordBid,
-} from "./client";
+import type { NaverAdCredentials, NaverCampaign } from "./client";
+import { getStats, listAdGroups, listCampaigns, listKeywords, setCampaignStatus, setKeywordLock, updateKeywordBid } from "./client";
 
-// Only "WEB_SITE" (파워링크) campaigns have been verified against the real API — keyword-
-// level bidding (BID_CEILING/PAUSE_NO_CONVERSION) and the campaign status endpoint
-// (DAILY_BUDGET_GUARD's pause) both failed with a 400 "유효하지 않은 ID 형식입니다" when
-// tried against a PLACE campaign in production. Rather than let that surface as a cryptic
-// API error, check the campaign type up front and skip with a clear reason.
+// Only "WEB_SITE" (파워링크) campaigns have been verified against the real API — the
+// campaign status endpoint (DAILY_BUDGET_GUARD's pause) failed with a 400 "유효하지
+// 않은 ID 형식입니다" when tried against a PLACE campaign in production. Rather than let
+// that surface as a cryptic API error, check the campaign type up front and skip with a
+// clear reason instead.
+//
+// This resolves the type via listCampaigns()/listAdGroups() — the only two endpoints
+// confirmed working end-to-end in production (they back the account-connect flow and the
+// rule-target dropdown). An earlier version of this check called single-resource GET
+// endpoints (/ncc/campaigns/{id}, /ncc/adgroups/{id}) that turned out not to exist on this
+// API and broke the *legitimate* PowerLink path too — don't reintroduce those without
+// verifying them against a real account first.
 const SUPPORTED_CAMPAIGN_TYPE = "WEB_SITE";
 
 function assertSupportedCampaign(campaignTp: string): void {
@@ -24,6 +23,22 @@ function assertSupportedCampaign(campaignTp: string): void {
       `이 자동화 규칙은 파워링크(WEB_SITE) 캠페인만 지원합니다. 대상의 캠페인 유형은 "${campaignTp}"입니다 — 플레이스/쇼핑검색/파워컨텐츠 등은 아직 지원하지 않습니다.`,
     );
   }
+}
+
+async function resolveCampaignForId(creds: NaverAdCredentials, nccCampaignId: string): Promise<NaverCampaign> {
+  const campaigns = await listCampaigns(creds);
+  const campaign = campaigns.find((c) => c.nccCampaignId === nccCampaignId);
+  if (!campaign) throw new Error(`캠페인을 찾을 수 없습니다 (ID: ${nccCampaignId}). 삭제되었거나 접근 권한이 없을 수 있습니다.`);
+  return campaign;
+}
+
+async function resolveCampaignForAdGroupId(creds: NaverAdCredentials, nccAdgroupId: string): Promise<NaverCampaign> {
+  const campaigns = await listCampaigns(creds);
+  for (const campaign of campaigns) {
+    const adGroups = await listAdGroups(creds, campaign.nccCampaignId);
+    if (adGroups.some((g) => g.nccAdgroupId === nccAdgroupId)) return campaign;
+  }
+  throw new Error(`광고그룹을 찾을 수 없습니다 (ID: ${nccAdgroupId}). 삭제되었거나 접근 권한이 없을 수 있습니다.`);
 }
 
 // The automation rule engine. Two independent switches gate every LIVE write to the
@@ -59,8 +74,7 @@ async function planBidCeiling(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as BidCeilingParams;
-  const adGroup = await getAdGroup(creds, rule.naverTargetId);
-  const campaign = await getCampaign(creds, adGroup.nccCampaignId);
+  const campaign = await resolveCampaignForAdGroupId(creds, rule.naverTargetId);
   assertSupportedCampaign(campaign.campaignTp);
 
   const keywords = await listKeywords(creds, rule.naverTargetId);
@@ -96,8 +110,7 @@ async function planPauseNoConversion(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as PauseNoConversionParams;
-  const adGroup = await getAdGroup(creds, rule.naverTargetId);
-  const campaign = await getCampaign(creds, adGroup.nccCampaignId);
+  const campaign = await resolveCampaignForAdGroupId(creds, rule.naverTargetId);
   assertSupportedCampaign(campaign.campaignTp);
 
   const keywords = await listKeywords(creds, rule.naverTargetId);
@@ -133,7 +146,7 @@ async function planDailyBudgetGuard(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as DailyBudgetGuardParams;
-  const campaign = await getCampaign(creds, rule.naverTargetId);
+  const campaign = await resolveCampaignForId(creds, rule.naverTargetId);
   assertSupportedCampaign(campaign.campaignTp);
 
   const stats = await getStats(creds, [rule.naverTargetId], "today");

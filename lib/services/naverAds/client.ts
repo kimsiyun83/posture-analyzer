@@ -114,17 +114,15 @@ export function listCampaigns(creds: NaverAdCredentials): Promise<NaverCampaign[
   return request<NaverCampaign[]>(creds, "GET", "/ncc/campaigns");
 }
 
-export function getCampaign(creds: NaverAdCredentials, nccCampaignId: string): Promise<NaverCampaign> {
-  return request<NaverCampaign>(creds, "GET", `/ncc/campaigns/${nccCampaignId}`);
-}
-
 export function listAdGroups(creds: NaverAdCredentials, nccCampaignId: string): Promise<NaverAdGroup[]> {
   return request<NaverAdGroup[]>(creds, "GET", "/ncc/adgroups", { query: { nccCampaignId } });
 }
 
-export function getAdGroup(creds: NaverAdCredentials, nccAdgroupId: string): Promise<NaverAdGroup> {
-  return request<NaverAdGroup>(creds, "GET", `/ncc/adgroups/${nccAdgroupId}`);
-}
+// Deliberately no single-resource getCampaign(id)/getAdGroup(id) here — an earlier version
+// added GET /ncc/campaigns/{id} and /ncc/adgroups/{id}, assumed by REST convention, and it
+// broke a legitimate PowerLink rule run in production with a 400 "유효하지 않은 ID 형식입니다"
+// (see lib/services/naverAds/rules.ts). Only add single-resource lookups back after
+// confirming the exact path against a real account.
 
 export function listKeywords(creds: NaverAdCredentials, nccAdgroupId: string): Promise<NaverKeyword[]> {
   return request<NaverKeyword[]>(creds, "GET", "/ncc/keywords", { query: { nccAdgroupId } });
