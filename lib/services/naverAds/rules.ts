@@ -1,7 +1,30 @@
 import { prisma } from "@/lib/db";
 import type { NaverAdAccount, AdAutomationRule } from "@/lib/generated/prisma/client";
 import type { NaverAdCredentials } from "./client";
-import { getStats, listKeywords, setCampaignStatus, setKeywordLock, updateKeywordBid } from "./client";
+import {
+  getAdGroup,
+  getCampaign,
+  getStats,
+  listKeywords,
+  setCampaignStatus,
+  setKeywordLock,
+  updateKeywordBid,
+} from "./client";
+
+// Only "WEB_SITE" (파워링크) campaigns have been verified against the real API — keyword-
+// level bidding (BID_CEILING/PAUSE_NO_CONVERSION) and the campaign status endpoint
+// (DAILY_BUDGET_GUARD's pause) both failed with a 400 "유효하지 않은 ID 형식입니다" when
+// tried against a PLACE campaign in production. Rather than let that surface as a cryptic
+// API error, check the campaign type up front and skip with a clear reason.
+const SUPPORTED_CAMPAIGN_TYPE = "WEB_SITE";
+
+function assertSupportedCampaign(campaignTp: string): void {
+  if (campaignTp !== SUPPORTED_CAMPAIGN_TYPE) {
+    throw new Error(
+      `이 자동화 규칙은 파워링크(WEB_SITE) 캠페인만 지원합니다. 대상의 캠페인 유형은 "${campaignTp}"입니다 — 플레이스/쇼핑검색/파워컨텐츠 등은 아직 지원하지 않습니다.`,
+    );
+  }
+}
 
 // The automation rule engine. Two independent switches gate every LIVE write to the
 // Naver account — both must be on, or nothing but a proposal is ever written:
@@ -36,6 +59,10 @@ async function planBidCeiling(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as BidCeilingParams;
+  const adGroup = await getAdGroup(creds, rule.naverTargetId);
+  const campaign = await getCampaign(creds, adGroup.nccCampaignId);
+  assertSupportedCampaign(campaign.campaignTp);
+
   const keywords = await listKeywords(creds, rule.naverTargetId);
   if (keywords.length === 0) return [];
 
@@ -69,6 +96,10 @@ async function planPauseNoConversion(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as PauseNoConversionParams;
+  const adGroup = await getAdGroup(creds, rule.naverTargetId);
+  const campaign = await getCampaign(creds, adGroup.nccCampaignId);
+  assertSupportedCampaign(campaign.campaignTp);
+
   const keywords = await listKeywords(creds, rule.naverTargetId);
   const activeKeywords = keywords.filter((k) => !k.userLock);
   if (activeKeywords.length === 0) return [];
@@ -102,6 +133,9 @@ async function planDailyBudgetGuard(
   rule: AdAutomationRule,
 ): Promise<RuleAction[]> {
   const params = rule.paramsJson as unknown as DailyBudgetGuardParams;
+  const campaign = await getCampaign(creds, rule.naverTargetId);
+  assertSupportedCampaign(campaign.campaignTp);
+
   const stats = await getStats(creds, [rule.naverTargetId], "today");
   const todaySpend = stats[0]?.salesAmt ?? 0;
   if (todaySpend < params.dailyBudgetCap) return [];

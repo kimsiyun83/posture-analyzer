@@ -114,8 +114,16 @@ export function listCampaigns(creds: NaverAdCredentials): Promise<NaverCampaign[
   return request<NaverCampaign[]>(creds, "GET", "/ncc/campaigns");
 }
 
+export function getCampaign(creds: NaverAdCredentials, nccCampaignId: string): Promise<NaverCampaign> {
+  return request<NaverCampaign>(creds, "GET", `/ncc/campaigns/${nccCampaignId}`);
+}
+
 export function listAdGroups(creds: NaverAdCredentials, nccCampaignId: string): Promise<NaverAdGroup[]> {
   return request<NaverAdGroup[]>(creds, "GET", "/ncc/adgroups", { query: { nccCampaignId } });
+}
+
+export function getAdGroup(creds: NaverAdCredentials, nccAdgroupId: string): Promise<NaverAdGroup> {
+  return request<NaverAdGroup>(creds, "GET", `/ncc/adgroups/${nccAdgroupId}`);
 }
 
 export function listKeywords(creds: NaverAdCredentials, nccAdgroupId: string): Promise<NaverKeyword[]> {
