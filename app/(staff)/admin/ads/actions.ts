@@ -10,12 +10,13 @@ import {
   createRule,
   deleteAccount,
   deleteRule,
+  getTargetStats,
   runAutomationForAllAccounts,
   setAccountActive,
   setAccountAutoExecute,
   setRuleActive,
 } from "@/lib/services/naverAds";
-import { NaverAdApiError } from "@/lib/services/naverAds/client";
+import { NaverAdApiError, type AdStatRow } from "@/lib/services/naverAds/client";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -115,6 +116,39 @@ export async function analyzeKeywordsAction(
   }
   revalidatePath("/admin/ads");
   return {};
+}
+
+export interface StatsActionState extends ActionState {
+  stats?: AdStatRow | null;
+}
+
+// Read-only — works for any campaign type (PowerLink, Place, etc), unlike the
+// write-side rule engine which only supports PowerLink today.
+export async function viewStatsAction(
+  accountId: string,
+  _prevState: StatsActionState,
+  formData: FormData,
+): Promise<StatsActionState> {
+  await requireAdmin();
+
+  const naverTargetId = String(formData.get("naverTargetId") ?? "").trim();
+  const datePreset = String(formData.get("datePreset") ?? "yesterday") as
+    | "today"
+    | "yesterday"
+    | "last7days"
+    | "last30days";
+
+  if (!naverTargetId) return { error: "조회할 대상을 선택해주세요." };
+
+  try {
+    const stats = await getTargetStats(accountId, naverTargetId, datePreset);
+    return { stats };
+  } catch (err) {
+    if (err instanceof NaverAdApiError) {
+      return { error: `네이버 API 오류 (${err.status}): ${JSON.stringify(err.body)}` };
+    }
+    return { error: `성과 조회 중 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}` };
+  }
 }
 
 export async function createRuleAction(

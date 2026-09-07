@@ -3,8 +3,10 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { decryptSecret, encryptSecret } from "./crypto";
 import {
   getRelatedKeywords,
+  getStats,
   listAdGroups,
   listCampaigns,
+  type AdStatRow,
   type NaverAdCredentials,
   type RelatedKeywordStat,
 } from "./client";
@@ -94,6 +96,14 @@ export interface CampaignTargetOption {
   label: string;
 }
 
+const CAMPAIGN_TYPE_LABEL_KO: Record<string, string> = {
+  WEB_SITE: "파워링크",
+  SHOPPING: "쇼핑검색",
+  POWER_CONTENTS: "파워컨텐츠",
+  PLACE: "플레이스",
+  BRAND_SEARCH: "브랜드검색",
+};
+
 // Best-effort — this hits the live Naver API, so a bad/rotated credential or a
 // transient failure shouldn't break the whole rule-builder UI. Callers should
 // treat an empty array as "couldn't fetch, enter the ID manually" rather than
@@ -106,10 +116,11 @@ export async function listCampaignTargetOptions(accountId: string): Promise<Camp
   const options: CampaignTargetOption[] = [];
 
   for (const campaign of campaigns) {
+    const typeLabel = CAMPAIGN_TYPE_LABEL_KO[campaign.campaignTp] ?? campaign.campaignTp;
     options.push({
       targetLevel: "CAMPAIGN",
       naverTargetId: campaign.nccCampaignId,
-      label: `[캠페인] ${campaign.name} (${campaign.nccCampaignId})`,
+      label: `[캠페인·${typeLabel}] ${campaign.name} (${campaign.nccCampaignId})`,
     });
 
     const adGroups = await listAdGroups(creds, campaign.nccCampaignId);
@@ -117,12 +128,27 @@ export async function listCampaignTargetOptions(accountId: string): Promise<Camp
       options.push({
         targetLevel: "ADGROUP",
         naverTargetId: adGroup.nccAdgroupId,
-        label: `  ㄴ [광고그룹] ${campaign.name} / ${adGroup.name} (${adGroup.nccAdgroupId})`,
+        label: `  ㄴ [광고그룹·${typeLabel}] ${campaign.name} / ${adGroup.name} (${adGroup.nccAdgroupId})`,
       });
     }
   }
 
   return options;
+}
+
+// ---------- 성과 보기 (모든 캠페인 유형 지원 — 파워링크·플레이스 등) ----------
+
+// Unlike the rule engine (write actions, PowerLink-only for now), stats are pure
+// read-only reporting and work the same regardless of campaign type.
+export async function getTargetStats(
+  accountId: string,
+  naverTargetId: string,
+  datePreset: "today" | "yesterday" | "last7days" | "last30days" = "yesterday",
+): Promise<AdStatRow | null> {
+  const account = await prisma.naverAdAccount.findUniqueOrThrow({ where: { id: accountId } });
+  const creds = toCreds(account);
+  const rows = await getStats(creds, [naverTargetId], datePreset);
+  return rows[0] ?? null;
 }
 
 // ---------- 자동화 규칙 ----------

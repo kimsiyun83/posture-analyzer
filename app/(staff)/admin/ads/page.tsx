@@ -20,6 +20,7 @@ import {
 import ConnectAccountForm from "./ConnectAccountForm";
 import KeywordAnalysisForm from "./KeywordAnalysisForm";
 import CreateRuleForm from "./CreateRuleForm";
+import StatsViewer from "./StatsViewer";
 
 export default async function NaverAdsPage() {
   const session = await getSession();
@@ -107,6 +108,7 @@ export default async function NaverAdsPage() {
               </div>
 
               <KeywordTool accountId={account.id} />
+              <StatsSection accountId={account.id} />
               <RuleSection accountId={account.id} />
               <RunLogSection accountId={account.id} />
             </div>
@@ -153,6 +155,17 @@ async function KeywordTool({ accountId }: { accountId: string }) {
       )}
     </div>
   );
+}
+
+async function StatsSection({ accountId }: { accountId: string }) {
+  let targetOptions: CampaignTargetOption[] = [];
+  try {
+    targetOptions = await listCampaignTargetOptions(accountId);
+  } catch {
+    // StatsViewer itself shows a fallback message when the list is empty.
+  }
+
+  return <StatsViewer accountId={accountId} targetOptions={targetOptions} />;
 }
 
 async function RuleSection({ accountId }: { accountId: string }) {
