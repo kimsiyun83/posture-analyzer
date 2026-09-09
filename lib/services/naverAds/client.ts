@@ -32,14 +32,22 @@ async function request<T>(
   creds: NaverAdCredentials,
   method: "GET" | "POST" | "PUT" | "DELETE",
   uriPath: string,
-  options: { query?: Record<string, string | number | undefined>; body?: unknown } = {},
+  options: { query?: Record<string, string | number | string[] | undefined>; body?: unknown } = {},
 ): Promise<T> {
   const timestamp = Date.now().toString();
   const signature = sign(timestamp, method, uriPath, creds.secretKey);
 
   const url = new URL(BASE_URL + uriPath);
   for (const [key, value] of Object.entries(options.query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
+    if (value === undefined) continue;
+    // Naver's API wants repeated params for array values (ids=a&ids=b), matching
+    // requests.get(params={"ids": [...]})'s serialization in Naver's own Python sample —
+    // NOT a JSON-encoded array string, which the server rejects as an invalid ID.
+    if (Array.isArray(value)) {
+      for (const item of value) url.searchParams.append(key, item);
+    } else {
+      url.searchParams.set(key, String(value));
+    }
   }
 
   const res = await fetch(url, {
@@ -194,7 +202,7 @@ export async function getStats(
 ): Promise<AdStatRow[]> {
   const res = await request<{ data: AdStatRow[] }>(creds, "GET", "/stats", {
     query: {
-      ids: JSON.stringify(ids),
+      ids, // repeated params (ids=a&ids=b) — see request()'s array handling
       fields: JSON.stringify(["impCnt", "clkCnt", "salesAmt", "ctr", "cpc", "avgRnk", "ccnt"]),
       datePreset,
     },
