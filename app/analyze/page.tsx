@@ -49,6 +49,11 @@ function Assessment() {
   const lock = useRef(false);
   const [error, setError] = useState("");
   const [example, setExample] = useState<number | null>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  function moveExample(step: number) {
+    setExample((current) => current === null ? null :
+      (current + step + DIRECTIONS.length) % DIRECTIONS.length);
+  }
   const [goal, setGoal] = useState<Goal>("balance");
   const [discomfort, setDiscomfort] = useState(false);
   const [consent, setConsent] = useState(false);
@@ -478,6 +483,10 @@ function Assessment() {
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => {
               if (e.key === "Escape") setExample(null);
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                moveExample(e.key === "ArrowLeft" ? -1 : 1);
+              }
               if (e.key === "Tab") {
                 const buttons = Array.from(
                   e.currentTarget.querySelectorAll("button"),
@@ -504,14 +513,38 @@ function Assessment() {
                 ×
               </button>
             </header>
-            <h3>{DIRECTIONS[example]}</h3>
-            <div className="example-picture">
+            <h3 aria-live="polite">{DIRECTIONS[example]} <span className="example-count">{example + 1} / {DIRECTIONS.length}</span></h3>
+            <div className="example-slider">
+            <div className="example-picture"
+              onTouchStart={(e) => {
+                const touch = e.touches[0];
+                swipeStart.current = e.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : null;
+              }}
+              onTouchMove={(e) => {
+                if (e.touches.length !== 1) swipeStart.current = null;
+              }}
+              onTouchCancel={() => { swipeStart.current = null; }}
+              onTouchEnd={(e) => {
+                const start = swipeStart.current;
+                swipeStart.current = null;
+                const end = e.changedTouches[0];
+                if (!start || !end) return;
+                const dx = end.clientX - start.x;
+                const dy = end.clientY - start.y;
+                if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) moveExample(dx < 0 ? 1 : -1);
+              }}
+            >
               <img
+                draggable={false}
                 src="/illustrations/capture-directions.webp"
                 style={{ transform: `translateX(-${example * 25}%)` }}
                 alt={`${DIRECTIONS[example]} 전신 촬영 안내용 생성 이미지`}
               />
             </div>
+            <button type="button" className="example-arrow example-arrow-prev" aria-label="이전 촬영 예시" onClick={() => moveExample(-1)}>‹</button>
+            <button type="button" className="example-arrow example-arrow-next" aria-label="다음 촬영 예시" onClick={() => moveExample(1)}>›</button>
+            </div>
+            <p className="example-swipe-hint">사진을 좌우로 밀어 넘겨보세요</p>
             <div className="example-dots">
               {DIRECTIONS.map((d, i) => (
                 <button
