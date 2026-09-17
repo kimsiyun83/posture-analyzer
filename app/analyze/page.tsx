@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
-import { ReadingRow, ScoreGauge } from "@/components/ResultsReport";
-import ProgramFocusPanel from "@/components/ProgramFocusPanel";
+import DetailedPostureReport from "@/components/DetailedPostureReport";
 import { getPoseLandmarker } from "@/lib/pose/model";
 import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
@@ -285,7 +284,7 @@ function AnalyzePageInner() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6">
       <header className="flex items-center justify-between">
         <Link href="/" className="text-sm text-zinc-500 hover:underline">
           ← 처음으로
@@ -344,37 +343,14 @@ function AnalyzePageInner() {
 
       {step === "results" && frontShot && sideShot && frontResult && sideResult && programType && (
         <div className="flex flex-col gap-8">
-          <div className="flex items-center justify-around rounded-xl bg-zinc-50 p-6">
-            <ScoreGauge label="정면 정렬 점수" score={frontResult.overallScore} />
-            <ScoreGauge label="측면 정렬 점수" score={sideResult.overallScore} />
-          </div>
-
-          <ProgramFocusPanel programType={programType} frontResult={frontResult} sideResult={sideResult} />
-
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div className="flex flex-col gap-3">
-              <PostureCanvas imageSrc={frontShot.dataUrl} landmarks={frontShot.landmarks} view="front" />
-              <ReadingRow reading={frontResult.headTilt} />
-              <ReadingRow reading={frontResult.shoulderTilt} />
-              <ReadingRow reading={frontResult.hipTilt} />
-              <ReadingRow reading={frontResult.kneeAlignmentLeft} />
-              <ReadingRow reading={frontResult.kneeAlignmentRight} />
-            </div>
-            <div className="flex flex-col gap-3">
-              <PostureCanvas
-                imageSrc={sideShot.dataUrl}
-                landmarks={sideShot.landmarks}
-                view="side"
-                facing={sideResult.facing}
-              />
-              <ReadingRow reading={sideResult.forwardHeadAngle} />
-              <ReadingRow reading={sideResult.shoulderPlumbOffset} />
-              <ReadingRow reading={sideResult.hipPlumbOffset} />
-              <ReadingRow reading={sideResult.kneePlumbOffset} />
-            </div>
-          </div>
-
-          <Methodology />
+          <DetailedPostureReport
+            front={frontResult} side={sideResult} programType={programType}
+            dateLabel={new Date().toLocaleDateString("ko-KR")}
+            photos={<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <figure><PostureCanvas imageSrc={frontShot.dataUrl} landmarks={frontShot.landmarks} view="front" /><figcaption className="mt-2 text-center text-xs text-zinc-500">정면 · 좌우 정렬</figcaption></figure>
+              <figure><PostureCanvas imageSrc={sideShot.dataUrl} landmarks={sideShot.landmarks} view="side" facing={sideResult.facing} /><figcaption className="mt-2 text-center text-xs text-zinc-500">측면 · 발목 수직선 기준</figcaption></figure>
+            </div>}
+          />
 
           <div className="flex flex-col items-center gap-2 print:hidden">
             {memberId && (
@@ -393,7 +369,7 @@ function AnalyzePageInner() {
                 disabled={!reportDataUrl && !reportBuildError}
                 className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
               >
-                {reportDataUrl || reportBuildError ? "리포트 보기·저장" : "리포트 준비 중…"}
+                {reportDataUrl || reportBuildError ? "사진 요약 이미지 보기·저장" : "리포트 준비 중…"}
               </button>
               {memberId ? (
                 <Link
@@ -569,41 +545,5 @@ function ProgramSelect({ onSelect }: { onSelect: (type: ProgramType) => void }) 
         })}
       </div>
     </section>
-  );
-}
-
-function Methodology() {
-  return (
-    <details className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-600">
-      <summary className="cursor-pointer font-medium text-zinc-800">측정 방법론 및 유의사항</summary>
-      <div className="mt-3 flex flex-col gap-2">
-        <p>
-          이 도구는 사진에서 감지한 신체 랜드마크(어깨·골반·무릎·발목·귀 등)의 좌표로 각도와 상대적 위치 편차를
-          계산하는 <strong>사진 기반 자세 스크리닝</strong>입니다. 참고한 방법론은 다음과 같습니다.
-        </p>
-        <ul className="list-disc pl-5">
-          <li>
-            <strong>Kendall 추선(plumb line) 자세 평가</strong>: 발목에서 올린 수직 기준선 대비 무릎·골반·어깨의
-            전후 편차를 측정해 신체 정렬을 스크리닝하는 물리치료·운동처방 분야의 고전적 기법입니다.
-          </li>
-          <li>
-            <strong>귀-어깨 각도(전방머리자세 근사 지표)</strong>: 두개척추각(Craniovertebral Angle, CVA) 측정에서
-            착안한 지표로, C7 촉지 마커 없이도 어깨(견봉)와 귀(이주)를 연결한 선의 수평 대비 각도로 전방머리자세
-            경향을 스크리닝합니다. 값이 작을수록 전방머리자세 경향이 큽니다.
-          </li>
-          <li>
-            <strong>좌우 대칭성 스크리닝</strong>: 눈·어깨·골반의 좌우 높이차 및 무릎의 내외반 스크리닝은 정면
-            사진에서의 좌우 비대칭을 정량화한 것입니다.
-          </li>
-        </ul>
-        <p className="font-medium text-zinc-800">중요한 한계</p>
-        <p>
-          이 결과는 의료 진단이 아닌 참고용 선별(screening) 지표입니다. 단일 사진 기반 2D 분석은 카메라 각도,
-          촬영 거리, 자세 재현성에 따라 오차가 발생할 수 있습니다. 정확한 진단은 의료·물리치료 전문가의 대면
-          평가를 받으시길 권장하며, 이 앱은 동일 회원을 <strong>일정한 촬영 조건(같은 위치·거리·복장)</strong>으로
-          반복 측정해 시간에 따른 변화 추이를 추적하는 용도로 사용할 때 가장 신뢰도가 높습니다.
-        </p>
-      </div>
-    </details>
   );
 }

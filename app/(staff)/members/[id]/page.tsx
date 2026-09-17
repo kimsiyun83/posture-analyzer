@@ -412,6 +412,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             <li key={p.id} className="rounded-lg border border-zinc-200 p-2">
               {PROGRAM_META[p.programType as ProgramType]?.label ?? p.programType} · 정면 {p.frontScore}점 · 측면{" "}
               {p.sideScore}점 · {p.measuredAt.toLocaleDateString("ko-KR")}
+              <Link href={`/members/${member.id}/posture/${p.id}`} className="ml-3 inline-block rounded border border-zinc-300 px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50">상세 리포트 보기 →</Link>
             </li>
           ))}
           {member.postureResults.length === 0 && <li className="text-zinc-400">측정 기록 없음</li>}

@@ -24,7 +24,7 @@ export interface Reading {
 }
 
 export const SEVERITY_LABEL_KO: Record<Severity, string> = {
-  normal: "정상 범위",
+  normal: "참고 범위",
   mild: "경도 편차",
   notable: "뚜렷한 편차",
 };
@@ -218,7 +218,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
     value: shoulderOffsetVal,
     unit: "ratio",
     severity: classify(Math.abs(shoulderOffsetVal), 0.05, 0.1),
-    note: "발목에서 올린 수직선 대비 어깨의 전/후 편차(신장 대비 비율). 양수는 어깨가 앞으로 나온 둥근어깨 경향을 시사합니다.",
+    note: "발목 수직선 대비 어깨의 전/후 편차(화면상 귀-발목 거리 대비 비율). 양수는 앞쪽, 음수는 뒤쪽 위치이며 라운드숄더 진단이 아닙니다.",
   };
   const hipPlumbOffset: Reading = {
     key: "hipPlumbOffset",
@@ -226,7 +226,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
     value: hipOffsetVal,
     unit: "ratio",
     severity: classify(Math.abs(hipOffsetVal), 0.04, 0.08),
-    note: "발목 수직선 대비 골반의 전/후 편차. 골반 전방/후방 경사 스크리닝에 참고합니다.",
+    note: "발목 수직선 대비 골반의 전/후 위치 편차(화면상 귀-발목 거리 대비 비율). 골반 경사각은 측정하지 않습니다.",
   };
   const kneePlumbOffset: Reading = {
     key: "kneePlumbOffset",

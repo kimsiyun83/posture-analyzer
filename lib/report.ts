@@ -8,7 +8,8 @@ import {
   type SideResult,
 } from "./pose/metrics";
 import { loadImage, renderPostureOverlayCanvas } from "./pose/draw";
-import { PROGRAM_FOCUS, PROGRAM_META, type ProgramType } from "./pose/programs";
+import { PROGRAM_META, type ProgramType } from "./pose/programs";
+import { METRIC_GUIDES, readingInterpretation } from "./pose/report-details";
 
 interface Shot {
   dataUrl: string;
@@ -57,21 +58,16 @@ export async function buildReportCanvas(input: ReportInput): Promise<HTMLCanvasE
   const sidePhotoH = Math.round(CONTENT_W * (sideOverlay.height / sideOverlay.width));
 
   const meta = PROGRAM_META[programType];
-  const focusPoints = PROGRAM_FOCUS[programType];
   const readings = collectReadings(frontResult, sideResult);
 
   const scratch = document.createElement("canvas").getContext("2d");
   if (!scratch) throw new Error("canvas 2d context를 생성할 수 없습니다.");
 
   scratch.font = "13px sans-serif";
-  const focusItems = focusPoints
-    .map((point) => {
-      const reading = readings.find((r) => r.key === point.key);
-      if (!reading) return null;
-      const advice = point.advice[reading.severity] ?? point.advice.normal ?? "";
-      return { reading, advice, lines: wrapText(scratch, advice, CONTENT_W) };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
+  const focusItems = readings.map((reading) => {
+    const advice = `${readingInterpretation(reading)} ${METRIC_GUIDES[reading.key].check} ${METRIC_GUIDES[reading.key].limit}`;
+    return { reading, advice, lines: wrapText(scratch, advice, CONTENT_W) };
+  });
 
   scratch.font = "12px sans-serif";
   const footerText =
@@ -192,7 +188,7 @@ export async function buildReportCanvas(input: ReportInput): Promise<HTMLCanvasE
 
   ctx.font = "bold 17px sans-serif";
   ctx.fillStyle = "#18181b";
-  ctx.fillText(`${meta.label} 핵심 체크포인트`, PAD, cy + 16);
+  ctx.fillText(`${meta.label} · 상세 해설 및 재확인 포인트`, PAD, cy + 16);
   cy += 26;
 
   focusItems.forEach((item) => {
