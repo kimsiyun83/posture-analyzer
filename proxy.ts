@@ -6,6 +6,7 @@ const ADMIN_ONLY_PREFIXES = ["/admin", "/api/admin"];
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (["/illustrations/guide-character.webp", "/illustrations/capture-directions.webp"].includes(pathname)) return true;
   // Posture analyzer + landing page stay public — the client-facing screening
   // tool doesn't require staff login.
   if (pathname === "/" || pathname.startsWith("/analyze")) return true;

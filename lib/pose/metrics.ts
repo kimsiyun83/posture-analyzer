@@ -189,7 +189,7 @@ export function computeSideMetrics(lm: PoseLandmarks): SideResult {
   // ray toward the ear. A practical, marker-less proxy for the craniovertebral angle (CVA)
   // used in photographic posture-screening studies, substituting the acromion for C7 since
   // C7 cannot be located reliably from a single photo without a palpated marker.
-  const anteriorDir = facing === "right" ? 1 : -1;
+  const anteriorDir = lm[LM.nose].x >= ear.x ? 1 : -1;
   const horizonPoint: Point = { x: shoulder.x + anteriorDir * 100, y: shoulder.y };
   const fha = angleAt(horizonPoint, shoulder, ear);
   const forwardHeadAngle: Reading = {
