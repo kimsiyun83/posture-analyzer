@@ -38,15 +38,13 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
           video: { facingMode: { exact: facing } },
           audio: false,
         });
-      } catch {
-        try {
-          return await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: facing } },
-            audio: false,
-          });
-        } catch {
-          return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
+      } catch (cause) {
+        // Retry only an unsupported camera constraint, never a permission denial.
+        if (cancelled || !(cause instanceof DOMException) ||
+            !["OverconstrainedError", "NotFoundError"].includes(cause.name)) throw cause;
+        return navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facing } }, audio: false,
+        });
       }
     }
 
@@ -72,11 +70,12 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
         // Device labels/ids are only populated once permission is granted; enumerate lazily
         // and only adopt the result if we don't already have a list (avoids re-triggering
         // this effect via a `devices.length` dependency every time the list is (re)filled).
-        const list = await navigator.mediaDevices.enumerateDevices();
+        const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
         if (!cancelled) {
           setDevices((prev) => (prev.length > 0 ? prev : list.filter((d) => d.kind === "videoinput")));
         }
       } catch {
+        stopStream();
         if (!cancelled) setError("카메라에 접근할 수 없습니다. 브라우저 권한을 확인해 주세요.");
       }
     }

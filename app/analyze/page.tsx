@@ -281,10 +281,9 @@ function Assessment() {
             <button className="text-link" onClick={() => setExample(index)}>
               촬영 예시 확인하기 ↗
             </button>
-            {stage === "capture" && !busy && (
-              <>
+            {(stage === "capture" || stage === "review") && (
+              <div hidden={stage !== "capture" || busy}>
                 <CameraCapture
-                  key={index}
                   view={index === 2 ? "back" : index === 1 || index === 3 ? "side" : "front"}
                   onCapture={capture}
                 />
@@ -308,7 +307,7 @@ function Assessment() {
                     }}
                   />
                 </label>
-              </>
+              </div>
             )}
             {busy && (
               <div role="status" className="care-card empty-panel">

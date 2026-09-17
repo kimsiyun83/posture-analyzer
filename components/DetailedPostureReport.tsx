@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import PostureStateVisual from "@/components/PostureStateVisual";
 import { collectReadings, formatReadingValue, type FrontResult, type SideResult } from "@/lib/pose/metrics";
 import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
 import { COACHING, METRIC_GUIDES, REPORT_LABEL, readingInterpretation, summarizeReport } from "@/lib/pose/report-details";
@@ -63,7 +64,7 @@ export default function DetailedPostureReport({ front, side, programType, dateLa
       <div className="report-filters report-no-print" role="group" aria-label="촬영 방향 필터">{(["all","front","side"] as const).map(v=><button type="button" key={v} aria-pressed={view===v} onClick={()=>setView(v)}>{v==="all"?"전체 9":v==="front"?"정면 5":"측면 4"}</button>)}</div>
       <div className="report-metrics">{all.map(r=>{const g=METRIC_GUIDES[r.key];const displayed=r.unit==="ratio"?r.value*100:r.value;return <section id={`metric-${r.key}`} key={r.key} className={`report-metric ${view!=="all"&&view!==g.view?"report-filtered":""}`}>
         <div className="report-metric-top"><span>{g.view==="front"?"정면":"측면"}</span><span className={`report-badge status-${r.severity}`}>{REPORT_LABEL[r.severity]}</span></div><h3>{g.title}</h3><div className="report-value"><strong>{formatReadingValue(r)}</strong><span>참고 범위: {g.range}</span></div>
-        <meter min={0} max={g.max} value={Math.min(Math.abs(displayed),g.max)} aria-label={`${g.title} 측정 절댓값`} className={`report-meter status-${r.severity}`}/><p className="report-interpretation">{readingInterpretation(r)}</p>
+        <PostureStateVisual reading={r}/><meter min={0} max={g.max} value={Math.min(Math.abs(displayed),g.max)} aria-label={`${g.title} 측정 절댓값`} className={`report-meter status-${r.severity}`}/><p className="report-interpretation">{readingInterpretation(r)}</p>
         <dl><div><dt>무엇을 측정하나요?</dt><dd>{g.meaning}</dd></div><div><dt>다음 확인</dt><dd>{g.check}</dd></div></dl>
         <details><summary>해석 시 알아둘 한계</summary><p>{g.limit}</p></details><p className="report-print-limit">{g.limit}</p>
       </section>;})}</div>
