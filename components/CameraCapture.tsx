@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface CameraCaptureProps {
+  captureError?: string;
   view: "front" | "side" | "back";
   onCapture: (dataUrl: string, width: number, height: number) => void;
 }
 
 const TIMER_OPTIONS = [0, 3, 5] as const;
 
-export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
+export default function CameraCapture({ view, onCapture, captureError }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -153,6 +154,12 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
         )}
       </div>
 
+      {captureError && (
+        <div className="error-message w-full" role="alert" aria-live="assertive" aria-atomic="true">
+          <strong className="block mb-1">촬영을 다시 확인해 주세요</strong>
+          {captureError}
+        </div>
+      )}
       <button type="button" aria-pressed={mirror} onClick={() => setMirror(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">좌우 반전 · 거울 모드 {mirror ? "켜짐" : "꺼짐"}</button>
       <p className="text-xs text-zinc-500">촬영 미리보기 방향만 바뀝니다. 분석용 사진은 원본 방향으로 저장됩니다.</p>
       <div className="flex items-center gap-2 rounded-full bg-zinc-100 p-1">

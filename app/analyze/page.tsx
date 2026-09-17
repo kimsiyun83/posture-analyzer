@@ -286,6 +286,7 @@ function Assessment() {
                 <CameraCapture
                   view={index === 2 ? "back" : index === 1 || index === 3 ? "side" : "front"}
                   onCapture={capture}
+                  captureError={error}
                 />
                 <label className="care-secondary upload-label">
                   이미 촬영한 사진 선택
@@ -447,7 +448,7 @@ function Assessment() {
             </div>
           </>
         )}
-        {error && (
+        {error && stage !== "capture" && (
           <p className="error-message" role="alert">
             {error}
           </p>
