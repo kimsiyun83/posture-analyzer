@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface CameraCaptureProps {
-  view: "front" | "side";
+  view: "front" | "side" | "back";
   onCapture: (dataUrl: string, width: number, height: number) => void;
 }
 
@@ -64,6 +64,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
+        if (cancelled) return;
         setReady(true);
         // Device labels/ids are only populated once permission is granted; enumerate lazily
         // and only adopt the result if we don't already have a list (avoids re-triggering
@@ -93,7 +94,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
 
   const takeShot = useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -136,7 +137,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   return (
     <div className="flex flex-col items-center gap-4 w-full">
       <div className="relative w-full max-w-md aspect-[3/4] max-h-[58vh] bg-black rounded-xl overflow-hidden">
-        <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+        <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         <GuideOverlay view={view} />
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -200,7 +201,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   );
 }
 
-function GuideOverlay({ view }: { view: "front" | "side" }) {
+function GuideOverlay({ view }: { view: "front" | "side" | "back" }) {
   return (
     <svg
       className="absolute inset-0 w-full h-full pointer-events-none opacity-70"
@@ -208,12 +209,12 @@ function GuideOverlay({ view }: { view: "front" | "side" }) {
       preserveAspectRatio="none"
     >
       <line x1="150" y1="0" x2="150" y2="400" stroke="#22d3ee" strokeWidth="1" strokeDasharray="6 6" />
-      {view === "front" ? (
+      {view !== "side" ? (
         <>
           <line x1="60" y1="90" x2="240" y2="90" stroke="#facc15" strokeWidth="1" strokeDasharray="4 4" />
           <line x1="70" y1="230" x2="230" y2="230" stroke="#facc15" strokeWidth="1" strokeDasharray="4 4" />
           <text x="150" y="380" fill="#fff" fontSize="12" textAnchor="middle">
-            정면: 어깨 · 골반 라인을 가이드에 맞춰 주세요
+            {view === "back" ? "후면: 등을 카메라 쪽으로 보여주세요" : "정면: 양팔을 자연스럽게 내리고 서 주세요"}
           </text>
         </>
       ) : (

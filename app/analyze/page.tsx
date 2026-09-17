@@ -1,609 +1,531 @@
 "use client";
-
-import { Suspense, useEffect, useRef, useState } from "react";
+/* eslint-disable @next/next/no-img-element */
+import { Suspense, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
-import { ReadingRow, ScoreGauge } from "@/components/ResultsReport";
-import ProgramFocusPanel from "@/components/ProgramFocusPanel";
+import DetailedPostureReport from "@/components/DetailedPostureReport";
 import { getPoseLandmarker } from "@/lib/pose/model";
-import { computeFrontMetrics, computeSideMetrics, type FrontResult, type SideResult } from "@/lib/pose/metrics";
+import {
+  computeFrontMetrics,
+  computeSideMetrics,
+  type FrontResult,
+  type SideResult,
+  formatReadingValue,
+} from "@/lib/pose/metrics";
+import { tiltFromLevel } from "@/lib/pose/math";
 import type { PoseLandmarks } from "@/lib/pose/landmarks";
-import { PROGRAM_META, PROGRAM_ORDER, type ProgramType } from "@/lib/pose/programs";
-import { buildReportCanvas, canvasToPdfBlob, canvasToPngBlob, shareBlob } from "@/lib/report";
-
-type Step = "select-program" | "front-capture" | "side-capture" | "analyzing" | "results" | "error";
-
+import {
+  DIRECTIONS,
+  checkedPixels,
+  recommend,
+  saveRecord,
+  type Goal,
+  type AssessmentRecord,
+} from "@/lib/assessment";
 interface Shot {
   dataUrl: string;
   landmarks: PoseLandmarks;
+  front?: FrontResult;
+  side?: SideResult;
+  back?: { shoulder: number; hip: number };
 }
-
-// Persisted so an accidental back-navigation or reload doesn't wipe photos already
-// captured — restored on mount, cleared on an explicit reset. Only the small,
-// JSON-serializable pieces are kept (not the report canvas/blob, which rebuild
-// automatically once results are restored).
-const STORAGE_KEY = "posture-analyzer:session-v1";
-
-interface PersistedSession {
-  programType: ProgramType | null;
-  frontShot: Shot | null;
-  sideShot: Shot | null;
-  frontResult: FrontResult | null;
-  sideResult: SideResult | null;
-}
-
-// Derived rather than stored directly: transient steps ("analyzing", "error") would
-// otherwise restore into a dead-end with no in-flight work to resolve them.
-function deriveStep(s: PersistedSession): Step {
-  if (s.frontShot && s.frontResult && s.sideShot && s.sideResult && s.programType) return "results";
-  if (s.frontShot && s.frontResult && s.programType) return "side-capture";
-  if (s.programType) return "front-capture";
-  return "select-program";
-}
-
-function loadPersistedSession(): PersistedSession | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PersistedSession) : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedSession(data: PersistedSession) {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // storage full/unavailable (e.g. private browsing) — not critical, just skip
-  }
-}
-
-function clearPersistedSession() {
-  try {
-    sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-export default function AnalyzePage() {
+export default function Page() {
   return (
-    <Suspense fallback={null}>
-      <AnalyzePageInner />
+    <Suspense>
+      <Assessment />
     </Suspense>
   );
 }
-
-function AnalyzePageInner() {
-  const searchParams = useSearchParams();
-  const memberId = searchParams.get("memberId");
-  const [savedToMember, setSavedToMember] = useState(false);
-  const [saveToMemberState, setSaveToMemberState] = useState<"idle" | "saving" | "error">("idle");
-  const [step, setStep] = useState<Step>("select-program");
-  // Once true, the camera stays mounted (just hidden) for the rest of the page's
-  // lifetime, even across "새로 측정하기" resets and errors — getUserMedia should
-  // only ever be requested once per visit, otherwise the browser/OS permission
-  // prompt can resurface on every capture cycle.
-  const [cameraActivated, setCameraActivated] = useState(false);
-  const [programType, setProgramType] = useState<ProgramType | null>(null);
-  const [frontShot, setFrontShot] = useState<Shot | null>(null);
-  const [sideShot, setSideShot] = useState<Shot | null>(null);
-  const [frontResult, setFrontResult] = useState<FrontResult | null>(null);
-  const [sideResult, setSideResult] = useState<SideResult | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [reportDataUrl, setReportDataUrl] = useState<string | null>(null);
-  const [reportPngBlob, setReportPngBlob] = useState<Blob | null>(null);
-  const [reportPdfBlob, setReportPdfBlob] = useState<Blob | null>(null);
-  const [reportBuildError, setReportBuildError] = useState<string | null>(null);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [pngShareState, setPngShareState] = useState<"idle" | "sharing" | "error">("idle");
-  const [pdfShareState, setPdfShareState] = useState<"idle" | "sharing" | "error">("idle");
-  const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
-  const reportCanvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  // Restore in-progress work once on mount (covers back/forward navigation and
-  // accidental reloads — this component fully remounts in both cases, wiping
-  // in-memory state, but sessionStorage survives). This has to run as an effect
-  // rather than a useState lazy initializer: sessionStorage isn't available during
-  // Next's server render, so seeding state from it synchronously would make the
-  // server-rendered HTML and the client's first render disagree (hydration error).
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    const saved = loadPersistedSession();
-    if (!saved) return;
-    const restoredStep = deriveStep(saved);
-    if (restoredStep === "select-program") return;
-    setProgramType(saved.programType);
-    setFrontShot(saved.frontShot);
-    setSideShot(saved.sideShot);
-    setFrontResult(saved.frontResult);
-    setSideResult(saved.sideResult);
-    setStep(restoredStep);
-    if (restoredStep === "front-capture" || restoredStep === "side-capture") setCameraActivated(true);
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  useEffect(() => {
-    if (step === "select-program") return;
-    savePersistedSession({ programType, frontShot, sideShot, frontResult, sideResult });
-  }, [step, programType, frontShot, sideShot, frontResult, sideResult]);
-
-  async function detect(dataUrl: string): Promise<PoseLandmarks> {
-    const landmarker = await getPoseLandmarker();
-    const img = document.createElement("img");
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("이미지 로드 실패"));
-      img.src = dataUrl;
-    });
-    const result = landmarker.detect(img);
-    if (!result.landmarks[0]) {
-      throw new Error("사진에서 사람을 인식하지 못했습니다. 몸 전체가 잘 보이도록 다시 촬영해 주세요.");
-    }
-    return result.landmarks[0] as PoseLandmarks;
-  }
-
-  async function handleFrontCapture(dataUrl: string) {
-    setStep("analyzing");
+function Assessment() {
+  const memberId = useSearchParams().get("memberId");
+  const [stage, setStage] = useState<
+    "prepare" | "capture" | "review" | "results"
+  >("prepare");
+  const [shots, setShots] = useState<Shot[]>([]);
+  const [pending, setPending] = useState<Shot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const [error, setError] = useState("");
+  const [example, setExample] = useState<number | null>(null);
+  const [goal, setGoal] = useState<Goal>("balance");
+  const [discomfort, setDiscomfort] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [record, setRecord] = useState<AssessmentRecord | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [memberSaved, setMemberSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const index = shots.length;
+  async function capture(dataUrl: string) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
     try {
-      const landmarks = await detect(dataUrl);
-      setFrontShot({ dataUrl, landmarks });
-      setFrontResult(computeFrontMetrics(landmarks));
-      setStep("side-capture");
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "분석 중 오류가 발생했습니다.");
-      setStep("error");
-    }
-  }
-
-  async function handleSideCapture(dataUrl: string) {
-    setStep("analyzing");
-    try {
-      const landmarks = await detect(dataUrl);
-      setSideShot({ dataUrl, landmarks });
-      setSideResult(computeSideMetrics(landmarks));
-      setStep("results");
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "분석 중 오류가 발생했습니다.");
-      setStep("error");
-    }
-  }
-
-  function reset() {
-    setFrontShot(null);
-    setSideShot(null);
-    setFrontResult(null);
-    setSideResult(null);
-    setErrorMsg(null);
-    setProgramType(null);
-    setReportDataUrl(null);
-    setReportPngBlob(null);
-    setReportPdfBlob(null);
-    setReportBuildError(null);
-    setShowReportModal(false);
-    setPngShareState("idle");
-    setPdfShareState("idle");
-    setActionErrorMsg(null);
-    reportCanvasRef.current = null;
-    clearPersistedSession();
-    setSavedToMember(false);
-    setSaveToMemberState("idle");
-    setStep("select-program");
-  }
-
-  async function handleSaveToMember() {
-    if (!memberId || !programType || !frontResult || !sideResult) return;
-    setSaveToMemberState("saving");
-    try {
-      const res = await fetch(`/api/members/${memberId}/posture`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ programType, frontResult, sideResult }),
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () =>
+          reject(
+            new Error("사진을 읽지 못했습니다. JPG 또는 PNG를 선택해 주세요."),
+          );
+        img.src = dataUrl;
       });
-      if (!res.ok) throw new Error("저장에 실패했습니다.");
-      setSavedToMember(true);
-      setSaveToMemberState("idle");
-    } catch {
-      setSaveToMemberState("error");
-    }
-  }
-
-  // Build the report image (and PDF) proactively as soon as results are ready,
-  // rather than inside a button's click handler. navigator.share() must fire close
-  // to the user gesture that triggered it — Safari revokes the permission if too
-  // much async work (loading two photos, drawing the composite, encoding a PDF)
-  // happens first.
-  useEffect(() => {
-    if (step !== "results" || !frontShot || !sideShot || !frontResult || !sideResult || !programType) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const canvas = await buildReportCanvas({
-          frontShot,
-          sideShot,
-          frontResult,
-          sideResult,
-          programType,
-          dateLabel: new Date().toLocaleDateString("ko-KR"),
-        });
-        if (cancelled) return;
-        reportCanvasRef.current = canvas;
-        setReportDataUrl(canvas.toDataURL("image/png"));
-        const pngBlob = await canvasToPngBlob(canvas);
-        if (!cancelled) setReportPngBlob(pngBlob);
-        const pdfBlob = await canvasToPdfBlob(canvas);
-        if (!cancelled) setReportPdfBlob(pdfBlob);
-      } catch (e) {
-        if (!cancelled) setReportBuildError(e instanceof Error ? e.message : "리포트 생성에 실패했습니다.");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, frontShot, sideShot, frontResult, sideResult, programType]);
-
-  async function handleSharePng() {
-    if (!reportPngBlob) return;
-    setPngShareState("sharing");
-    setActionErrorMsg(null);
-    try {
-      const shared = await shareBlob(reportPngBlob, `posture-report-${Date.now()}.png`);
-      if (!shared) {
-        setActionErrorMsg("이 브라우저에서는 공유가 지원되지 않습니다. 위 이미지를 길게 눌러 저장해 주세요.");
-      }
-      setPngShareState("idle");
+      const model = await getPoseLandmarker();
+      const detected = model.detect(img);
+      if (detected.landmarks.length !== 1)
+        throw new Error("한 사람의 전신이 보여야 합니다. 다시 촬영해 주세요.");
+      const landmarks = detected.landmarks[0] as PoseLandmarks;
+      const px = checkedPixels(
+        landmarks,
+        img.naturalWidth,
+        img.naturalHeight,
+        index,
+      );
+      const shot: Shot = { dataUrl, landmarks };
+      if (index === 0) shot.front = computeFrontMetrics(px);
+      else if (index === 2)
+        shot.back = {
+          shoulder: tiltFromLevel(px[11], px[12]),
+          hip: tiltFromLevel(px[23], px[24]),
+        };
+      else shot.side = computeSideMetrics(px);
+      setPending(shot);
+      setStage("review");
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
-        setPngShareState("idle");
-        return;
-      }
-      setActionErrorMsg(e instanceof Error ? e.message : "공유에 실패했습니다. 위 이미지를 길게 눌러 저장해 주세요.");
-      setPngShareState("error");
+      setError(
+        e instanceof Error
+          ? e.message
+          : "분석에 실패했습니다. 다시 시도해 주세요.",
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
   }
-
-  async function handleSharePdf() {
-    if (!reportPdfBlob) return;
-    setPdfShareState("sharing");
-    setActionErrorMsg(null);
+  function next() {
+    if (!pending) return;
+    const all = [...shots, pending];
+    setShots(all);
+    setPending(null);
+    if (all.length === 4) {
+      setRecord({
+        id: crypto.randomUUID(),
+        date: new Date().toISOString(),
+        front: all[0].front!,
+        side: all[3].side!,
+        right: all[1].side!,
+        back: all[2].back!,
+        goal,
+        discomfort,
+      });
+      setStage("results");
+    } else setStage("capture");
+    window.scrollTo(0, 0);
+  }
+  async function saveMember() {
+    if (!record || !memberId || saving || memberSaved) return;
+    setSaving(true);
+    setError("");
     try {
-      const shared = await shareBlob(reportPdfBlob, `posture-report-${Date.now()}.pdf`);
-      if (!shared) {
-        setActionErrorMsg("이 브라우저에서는 PDF 공유가 지원되지 않습니다. 이미지 저장을 이용해 주세요.");
-      }
-      setPdfShareState("idle");
+      const res = await fetch(
+        `/api/members/${encodeURIComponent(memberId)}/posture`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            programType: recommend(record).program,
+            frontResult: record.front,
+            sideResult: record.side,
+            assessment: record,
+          }),
+        },
+      );
+      if (!res.ok)
+        throw new Error(
+          "회원 기록 저장에 실패했습니다. 로그인 상태를 확인해 주세요.",
+        );
+      setMemberSaved(true);
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
-        setPdfShareState("idle");
-        return;
-      }
-      setActionErrorMsg(e instanceof Error ? e.message : "PDF 공유에 실패했습니다.");
-      setPdfShareState("error");
+      setError(e instanceof Error ? e.message : "저장 실패");
+    } finally {
+      setSaving(false);
     }
   }
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-6">
-      <header className="flex items-center justify-between">
-        <Link href="/" className="text-sm text-zinc-500 hover:underline">
-          ← 처음으로
-        </Link>
-        <StepIndicator step={step} />
+    <div
+      className={stage === "results" ? "assessment-report-wrap" : "care-app"}
+    >
+      <header className="care-header">
+        <Link href="/">← 홈</Link>
+        <b>{stage === "results" ? "내 몸의 평가" : "체형 분석"}</b>
+        <Link href="/analyze/tests">검사 목록</Link>
       </header>
-
-      {step === "select-program" && (
-        <ProgramSelect
-          onSelect={(type) => {
-            setProgramType(type);
-            setCameraActivated(true);
-            setStep("front-capture");
-          }}
-        />
-      )}
-
-      {/* Mounted once (on first program selection) and kept mounted — just hidden via
-          CSS — for the rest of the page's lifetime, including across "새로 측정하기"
-          resets and analysis errors. getUserMedia is only ever requested once per
-          visit; unmounting/remounting between capture cycles was re-triggering the
-          browser's camera permission prompt on every new client measurement. */}
-      {cameraActivated && (
-        <div className={step === "front-capture" || step === "side-capture" ? "contents" : "hidden"}>
-          <Section
-            title={step === "side-capture" ? "2. 측면 사진 촬영" : "1. 정면 사진 촬영"}
-            desc={
-              step === "side-capture"
-                ? "몸의 옆면(귀·어깨·골반·무릎·발목)이 카메라에 일직선으로 보이게 서 주세요."
-                : "양팔을 자연스럽게 내리고 정면을 보고 서 주세요."
-            }
-          >
-            <CameraCapture
-              view={step === "side-capture" ? "side" : "front"}
-              onCapture={step === "side-capture" ? handleSideCapture : handleFrontCapture}
-            />
-          </Section>
-        </div>
-      )}
-
-      {step === "analyzing" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-zinc-500">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-zinc-800" />
-          <p>자세를 분석하는 중입니다…</p>
-        </div>
-      )}
-
-      {step === "error" && (
-        <div className="flex flex-col items-center gap-4 py-16">
-          <p className="text-rose-600">{errorMsg}</p>
-          <button onClick={reset} className="rounded-full bg-zinc-900 px-6 py-3 text-white">
-            다시 시작하기
-          </button>
-        </div>
-      )}
-
-      {step === "results" && frontShot && sideShot && frontResult && sideResult && programType && (
-        <div className="flex flex-col gap-8">
-          <div className="flex items-center justify-around rounded-xl bg-zinc-50 p-6">
-            <ScoreGauge label="정면 정렬 점수" score={frontResult.overallScore} />
-            <ScoreGauge label="측면 정렬 점수" score={sideResult.overallScore} />
-          </div>
-
-          <ProgramFocusPanel programType={programType} frontResult={frontResult} sideResult={sideResult} />
-
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div className="flex flex-col gap-3">
-              <PostureCanvas imageSrc={frontShot.dataUrl} landmarks={frontShot.landmarks} view="front" />
-              <ReadingRow reading={frontResult.headTilt} />
-              <ReadingRow reading={frontResult.shoulderTilt} />
-              <ReadingRow reading={frontResult.hipTilt} />
-              <ReadingRow reading={frontResult.kneeAlignmentLeft} />
-              <ReadingRow reading={frontResult.kneeAlignmentRight} />
-            </div>
-            <div className="flex flex-col gap-3">
-              <PostureCanvas
-                imageSrc={sideShot.dataUrl}
-                landmarks={sideShot.landmarks}
-                view="side"
-                facing={sideResult.facing}
+      <main className={stage === "results" ? "assessment-report" : "care-main"}>
+        {stage === "prepare" && (
+          <>
+            <span className="eyebrow">MY BODY CHECK</span>
+            <h1>
+              내 몸을 알아보는
+              <br />
+              가장 쉬운 시작
+            </h1>
+            <p className="muted">
+              강습 선택은 검사 후에 해요.
+              <br />
+              먼저 네 방향에서 편안한 자세를 기록해 주세요.
+            </p>
+            <section className="care-card">
+              <h2>촬영 전 확인해 주세요</h2>
+              <ol className="prep-list">
+                <li>밝은 공간에서 머리부터 발끝까지 나오게 해주세요.</li>
+                <li>몸의 라인이 보이는 편안한 옷을 입고 신발을 벗어주세요.</li>
+                <li>휴대폰을 수평으로 고정하고 평소처럼 서 주세요.</li>
+                <li>같은 거리와 높이에서 네 방향을 촬영해 주세요.</li>
+              </ol>
+            </section>
+            <section className="care-card">
+              <h2>촬영은 총 4단계로 진행돼요</h2>
+              <div className="direction-steps">
+                {DIRECTIONS.map((d, i) => (
+                  <span key={d}>
+                    <b>{i + 1}</b>
+                    {d}
+                  </span>
+                ))}
+              </div>
+              <button className="care-secondary" onClick={() => setExample(0)}>
+                촬영 예시 이미지 보기
+              </button>
+            </section>
+            <section className="care-card">
+              <h2>어떤 변화를 원하시나요?</h2>
+              <p className="muted">검사 후 상담 방향을 정할 때 참고해요.</p>
+              <div className="goal-options">
+                {(
+                  [
+                    ["balance", "자세 · 균형"],
+                    ["strength", "근력 · 체력"],
+                    ["mobility", "유연성 · 움직임"],
+                  ] as const
+                ).map(([v, l]) => (
+                  <button
+                    key={v}
+                    aria-pressed={goal === v}
+                    onClick={() => setGoal(v)}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={discomfort}
+                  onChange={(e) => setDiscomfort(e.target.checked)}
+                />
+                현재 움직일 때 불편감이 있어요
+              </label>
+            </section>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
               />
-              <ReadingRow reading={sideResult.forwardHeadAngle} />
-              <ReadingRow reading={sideResult.shoulderPlumbOffset} />
-              <ReadingRow reading={sideResult.hipPlumbOffset} />
-              <ReadingRow reading={sideResult.kneePlumbOffset} />
+              사진 기반 참고용 분석임을 확인했어요.
+            </label>
+            <p className="muted small">
+              사진 분석은 브라우저에서 진행됩니다. 사진은 서버로 보내지 않으며
+              화면을 나가면 사라집니다.
+            </p>
+            <button
+              className="care-primary"
+              disabled={!consent}
+              onClick={() => setStage("capture")}
+            >
+              체형 분석 시작하기
+            </button>
+            <Link className="demo-link" href="/analyze/demo">
+              데모 리포트 보기 →
+            </Link>
+          </>
+        )}
+        {(stage === "capture" || stage === "review") && (
+          <>
+            <div className="direction-steps">
+              {DIRECTIONS.map((d, i) => (
+                <span key={d} className={i <= index ? "done" : ""}>
+                  <b>{i < index ? "✓" : i + 1}</b>
+                  {d}
+                </span>
+              ))}
             </div>
-          </div>
-
-          <Methodology />
-
-          <div className="flex flex-col items-center gap-2 print:hidden">
-            {memberId && (
-              <button
-                onClick={handleSaveToMember}
-                disabled={savedToMember || saveToMemberState === "saving"}
-                className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-medium text-white disabled:opacity-60"
-              >
-                {savedToMember ? "✓ 회원 기록에 저장됨" : saveToMemberState === "saving" ? "저장 중…" : "회원 기록에 저장"}
-              </button>
+            <h1>
+              {index + 1}. {DIRECTIONS[index]} 촬영
+            </h1>
+            <p className="muted">
+              {index === 0
+                ? "카메라를 바라보고 양팔을 자연스럽게 내려주세요."
+                : index === 2
+                  ? "카메라에 등을 보이고 편안하게 서 주세요."
+                  : index === 1
+                    ? "오른쪽 어깨가 카메라를 향하게 서 주세요."
+                    : "왼쪽 어깨가 카메라를 향하게 서 주세요."}
+            </p>
+            <button className="text-link" onClick={() => setExample(index)}>
+              촬영 예시 확인하기 ↗
+            </button>
+            {stage === "capture" && !busy && (
+              <>
+                <CameraCapture
+                  key={index}
+                  view={index === 2 ? "back" : index === 1 || index === 3 ? "side" : "front"}
+                  onCapture={capture}
+                />
+                <label className="care-secondary upload-label">
+                  이미 촬영한 사진 선택
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 15 * 1024 * 1024) {
+                        setError("15MB 이하의 사진을 선택해 주세요.");
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => capture(String(reader.result));
+                      reader.onerror = () =>
+                        setError("사진을 읽지 못했습니다.");
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              </>
             )}
-            {saveToMemberState === "error" && <p className="text-sm text-rose-600">회원 기록 저장에 실패했습니다.</p>}
-            <div className="flex flex-wrap justify-center gap-3">
-              <button
-                onClick={() => setShowReportModal(true)}
-                disabled={!reportDataUrl && !reportBuildError}
-                className="rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {reportDataUrl || reportBuildError ? "리포트 보기·저장" : "리포트 준비 중…"}
-              </button>
-              {memberId ? (
-                <Link
-                  href={`/members/${memberId}`}
-                  className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium"
+            {busy && (
+              <div role="status" className="care-card empty-panel">
+                <h2>관절 위치를 확인하고 있어요</h2>
+                <p>
+                  첫 검사에서는 분석 모델을 불러오는 데 시간이 걸릴 수 있어요.
+                </p>
+              </div>
+            )}
+            {stage === "review" && pending && (
+              <>
+                <img
+                  className="capture-preview"
+                  src={pending.dataUrl}
+                  alt={`${DIRECTIONS[index]} 촬영 확인`}
+                />
+                <p>사진의 방향과 전신이 올바르게 보이는지 확인해 주세요.</p>
+                <button className="care-primary" onClick={next}>
+                  {index === 3 ? "내 몸의 평가 보기" : "확인하고 다음 촬영"}
+                </button>
+                <button
+                  className="care-secondary"
+                  onClick={() => {
+                    setPending(null);
+                    setStage("capture");
+                  }}
                 >
-                  회원 페이지로 돌아가기
-                </Link>
-              ) : (
-                <button onClick={reset} className="rounded-full border border-zinc-300 px-5 py-3 text-sm font-medium">
-                  새로 측정하기
+                  다시 촬영하기
+                </button>
+              </>
+            )}
+          </>
+        )}
+        {stage === "results" && record && (
+          <>
+            <div className="report-photo-grid">
+              {shots.map((shot, i) => (
+                <figure key={i}>
+                  {i === 2 ? (
+                    <img src={shot.dataUrl} alt="후면 촬영 사진" />
+                  ) : (
+                    <PostureCanvas
+                      imageSrc={shot.dataUrl}
+                      landmarks={shot.landmarks}
+                      view={i === 0 ? "front" : "side"}
+                      facing={shot.side?.facing}
+                    />
+                  )}
+                  <figcaption>{DIRECTIONS[i]}</figcaption>
+                </figure>
+              ))}
+            </div>
+            <section className="care-card crosscheck">
+              <h2>네 방향 교차 확인</h2>
+              <p>
+                아래 값은 좌·우 촬영을 비교하기 위한 참고값입니다. 촬영 방향에
+                따른 차이를 질환으로 해석하지 않습니다.
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>확인 항목</th>
+                    <th>정면 / 오른쪽</th>
+                    <th>후면 / 왼쪽</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>어깨 수평 기울기</td>
+                    <td>{record.front.shoulderTilt.value.toFixed(1)}°</td>
+                    <td>{record.back.shoulder.toFixed(1)}°</td>
+                  </tr>
+                  <tr>
+                    <td>골반 수평 기울기</td>
+                    <td>{record.front.hipTilt.value.toFixed(1)}°</td>
+                    <td>{record.back.hip.toFixed(1)}°</td>
+                  </tr>
+                  {(
+                    [
+                      "forwardHeadAngle",
+                      "shoulderPlumbOffset",
+                      "hipPlumbOffset",
+                      "kneePlumbOffset",
+                    ] as const
+                  ).map((k) => (
+                    <tr key={k}>
+                      <td>{record.side[k].label.split(" (")[0]}</td>
+                      <td>{formatReadingValue(record.right[k])}</td>
+                      <td>{formatReadingValue(record.side[k])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small">
+                종합 지표는 정면과 왼쪽 측면의 기존 9항목으로 계산합니다.
+                후면·오른쪽 측면은 교차 확인용으로 점수에 중복 반영하지
+                않습니다.
+              </p>
+            </section>
+            <section className="care-card recommendation">
+              <span className="eyebrow">검사 후 · 나에게 맞는 강습 찾기</span>
+              <h2>{recommend(record).title}</h2>
+              <p>{recommend(record).reason}</p>
+              <p className="muted">
+                추천은 선택한 목표와 정렬 관찰 항목을 함께 보는 상담 안내입니다.
+                아래 결과의 관찰 항목을 강사와 확인한 후 PT · 필라테스 · 패시브
+                스트레칭 중 최종 선택하세요.
+              </p>
+            </section>
+            <DetailedPostureReport
+              front={record.front}
+              side={record.side}
+              programType={recommend(record).program}
+              dateLabel={new Date(record.date).toLocaleString("ko-KR")}
+            />
+            <div className="save-actions">
+              <button
+                className="care-primary"
+                disabled={saved}
+                onClick={() => {
+                  try {
+                    saveRecord(record);
+                    setSaved(true);
+                    setError("");
+                  } catch {
+                    setError(
+                      "기기에 저장하지 못했습니다. 브라우저 저장 공간을 확인하거나 PDF로 보관해 주세요.",
+                    );
+                  }
+                }}
+              >
+                {saved
+                  ? "✓ 이 기기에 저장했어요"
+                  : "이 기기에 저장 (사진 제외)"}
+              </button>
+              {memberId && (
+                <button
+                  className="care-secondary"
+                  disabled={memberSaved || saving}
+                  onClick={saveMember}
+                >
+                  {memberSaved
+                    ? "✓ 회원 기록에 저장됨"
+                    : saving
+                      ? "저장 중…"
+                      : "회원 기록에도 저장"}
                 </button>
               )}
+              <Link href="/analyze/tests" className="care-secondary">
+                움직임 검사 더하기
+              </Link>
+              <Link href="/" className="demo-link">
+                홈으로 돌아가기
+              </Link>
             </div>
-            {reportBuildError && <p className="text-sm text-rose-600">리포트 생성 실패: {reportBuildError}</p>}
-          </div>
-
-          {showReportModal && (
-            <ReportModal
-              dataUrl={reportDataUrl}
-              buildError={reportBuildError}
-              canShare={typeof navigator !== "undefined" && typeof navigator.share === "function"}
-              pngReady={!!reportPngBlob}
-              pdfReady={!!reportPdfBlob}
-              pngShareState={pngShareState}
-              pdfShareState={pdfShareState}
-              actionErrorMsg={actionErrorMsg}
-              onSharePng={handleSharePng}
-              onSharePdf={handleSharePdf}
-              onClose={() => setShowReportModal(false)}
-            />
-          )}
+          </>
+        )}
+        {error && (
+          <p className="error-message" role="alert">
+            {error}
+          </p>
+        )}
+      </main>
+      {example !== null && (
+        <div className="example-backdrop" onClick={() => setExample(null)}>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="촬영 예시 이미지"
+            className="example-dialog"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setExample(null);
+              if (e.key === "Tab") {
+                const buttons = Array.from(
+                  e.currentTarget.querySelectorAll("button"),
+                );
+                const first = buttons[0],
+                  last = buttons[buttons.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                  e.preventDefault();
+                  last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                  e.preventDefault();
+                  first.focus();
+                }
+              }
+            }}
+          >
+            <header>
+              <h2>촬영 예시 이미지</h2>
+              <button
+                autoFocus
+                aria-label="촬영 예시 닫기"
+                onClick={() => setExample(null)}
+              >
+                ×
+              </button>
+            </header>
+            <h3>{DIRECTIONS[example]}</h3>
+            <div className="example-picture">
+              <img
+                src="/illustrations/capture-directions.webp"
+                style={{ transform: `translateX(-${example * 25}%)` }}
+                alt={`${DIRECTIONS[example]} 전신 촬영 안내용 생성 이미지`}
+              />
+            </div>
+            <div className="example-dots">
+              {DIRECTIONS.map((d, i) => (
+                <button
+                  key={d}
+                  aria-label={`${d} 예시`}
+                  aria-pressed={example === i}
+                  onClick={() => setExample(i)}
+                />
+              ))}
+            </div>
+            <small>촬영 안내용 생성 이미지</small>
+          </section>
         </div>
       )}
     </div>
-  );
-}
-
-interface ReportModalProps {
-  dataUrl: string | null;
-  buildError: string | null;
-  canShare: boolean;
-  pngReady: boolean;
-  pdfReady: boolean;
-  pngShareState: "idle" | "sharing" | "error";
-  pdfShareState: "idle" | "sharing" | "error";
-  actionErrorMsg: string | null;
-  onSharePng: () => void;
-  onSharePdf: () => void;
-  onClose: () => void;
-}
-
-function ReportModal({
-  dataUrl,
-  buildError,
-  canShare,
-  pngReady,
-  pdfReady,
-  pngShareState,
-  pdfShareState,
-  actionErrorMsg,
-  onSharePng,
-  onSharePdf,
-  onClose,
-}: ReportModalProps) {
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 p-4">
-      <div className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-xl bg-white">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-          <span className="font-semibold text-zinc-900">리포트 저장</span>
-          <button onClick={onClose} className="text-sm text-zinc-500">
-            닫기
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {buildError && <p className="text-sm text-rose-600">리포트 생성에 실패했습니다: {buildError}</p>}
-          {dataUrl && (
-            <>
-              {/* 저장의 가장 확실한 경로: 새 탭/다운로드 링크는 기기마다 깨지는 경우가 많아
-                  (data: URL은 크롬이 새 탭 이동을 차단, blob: URL은 iOS Safari에서 새 탭이
-                  검정 화면으로 뜨는 버그가 있음), 같은 화면에 이미지를 직접 보여주고 길게 눌러
-                  저장하게 하는 방식이 기기·브라우저를 가장 덜 타는 방법입니다. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={dataUrl} alt="체형·자세 분석 리포트" className="w-full rounded-lg border border-zinc-200" />
-              <p className="mt-2 text-center text-xs text-zinc-500">
-                위 이미지를 <strong>길게 눌러</strong> &quot;사진에 저장&quot;을 선택하면 사진첩에 저장됩니다.
-              </p>
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2 border-t border-zinc-200 p-4">
-          {actionErrorMsg && <p className="text-sm text-rose-600">{actionErrorMsg}</p>}
-          {!canShare && <p className="text-xs text-zinc-500">이 브라우저는 공유하기를 지원하지 않습니다 — 위 이미지를 길게 눌러 저장해 주세요.</p>}
-          <div className="flex flex-wrap justify-center gap-2">
-            {canShare && (
-              <button
-                onClick={onSharePng}
-                disabled={!pngReady || pngShareState === "sharing"}
-                className="rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {pngShareState === "sharing" ? "공유 중…" : "이미지 공유하기"}
-              </button>
-            )}
-            {canShare && (
-              <button
-                onClick={onSharePdf}
-                disabled={!pdfReady || pdfShareState === "sharing"}
-                className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
-              >
-                {pdfShareState === "sharing" ? "공유 중…" : !pdfReady ? "PDF 준비 중…" : "PDF 공유하기"}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col items-center gap-4">
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="mt-1 text-sm text-zinc-500">{desc}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function StepIndicator({ step }: { step: Step }) {
-  const order: Step[] = ["select-program", "front-capture", "side-capture", "results"];
-  const idx = order.indexOf(step);
-  return (
-    <div className="flex gap-1.5">
-      {order.map((s, i) => (
-        <span
-          key={s}
-          className={`h-1.5 w-8 rounded-full ${i <= idx || step === "analyzing" ? "bg-zinc-800" : "bg-zinc-200"}`}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ProgramSelect({ onSelect }: { onSelect: (type: ProgramType) => void }) {
-  return (
-    <section className="flex flex-col items-center gap-5">
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">0. 어떤 수업을 위한 측정인가요?</h2>
-        <p className="mt-1 text-sm text-zinc-500">선택한 유형에 맞춰 핵심 체크포인트를 다르게 짚어드립니다.</p>
-      </div>
-      <div className="flex w-full max-w-md flex-col gap-3">
-        {PROGRAM_ORDER.map((type) => {
-          const meta = PROGRAM_META[type];
-          return (
-            <button
-              key={type}
-              type="button"
-              onClick={() => onSelect(type)}
-              className="rounded-xl border border-zinc-200 p-4 text-left transition-colors hover:border-zinc-400 hover:bg-zinc-50"
-            >
-              <div className="flex items-baseline justify-between">
-                <span className="font-semibold text-zinc-900">{meta.label}</span>
-                <span className="text-xs text-zinc-500">{meta.short}</span>
-              </div>
-              <p className="mt-1 text-sm text-zinc-600">{meta.description}</p>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function Methodology() {
-  return (
-    <details className="rounded-lg border border-zinc-200 p-4 text-sm text-zinc-600">
-      <summary className="cursor-pointer font-medium text-zinc-800">측정 방법론 및 유의사항</summary>
-      <div className="mt-3 flex flex-col gap-2">
-        <p>
-          이 도구는 사진에서 감지한 신체 랜드마크(어깨·골반·무릎·발목·귀 등)의 좌표로 각도와 상대적 위치 편차를
-          계산하는 <strong>사진 기반 자세 스크리닝</strong>입니다. 참고한 방법론은 다음과 같습니다.
-        </p>
-        <ul className="list-disc pl-5">
-          <li>
-            <strong>Kendall 추선(plumb line) 자세 평가</strong>: 발목에서 올린 수직 기준선 대비 무릎·골반·어깨의
-            전후 편차를 측정해 신체 정렬을 스크리닝하는 물리치료·운동처방 분야의 고전적 기법입니다.
-          </li>
-          <li>
-            <strong>귀-어깨 각도(전방머리자세 근사 지표)</strong>: 두개척추각(Craniovertebral Angle, CVA) 측정에서
-            착안한 지표로, C7 촉지 마커 없이도 어깨(견봉)와 귀(이주)를 연결한 선의 수평 대비 각도로 전방머리자세
-            경향을 스크리닝합니다. 값이 작을수록 전방머리자세 경향이 큽니다.
-          </li>
-          <li>
-            <strong>좌우 대칭성 스크리닝</strong>: 눈·어깨·골반의 좌우 높이차 및 무릎의 내외반 스크리닝은 정면
-            사진에서의 좌우 비대칭을 정량화한 것입니다.
-          </li>
-        </ul>
-        <p className="font-medium text-zinc-800">중요한 한계</p>
-        <p>
-          이 결과는 의료 진단이 아닌 참고용 선별(screening) 지표입니다. 단일 사진 기반 2D 분석은 카메라 각도,
-          촬영 거리, 자세 재현성에 따라 오차가 발생할 수 있습니다. 정확한 진단은 의료·물리치료 전문가의 대면
-          평가를 받으시길 권장하며, 이 앱은 동일 회원을 <strong>일정한 촬영 조건(같은 위치·거리·복장)</strong>으로
-          반복 측정해 시간에 따른 변화 추이를 추적하는 용도로 사용할 때 가장 신뢰도가 높습니다.
-        </p>
-      </div>
-    </details>
   );
 }

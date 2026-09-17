@@ -9,11 +9,12 @@ export function savePostureResult(input: {
   frontResult: FrontResult;
   sideResult: SideResult;
   recordedById?: string;
+  assessment?: unknown;
 }) {
   // FrontResult/SideResult are plain data (strings/numbers only) so this is a safe
   // structural cast — Prisma's InputJsonValue just requires an index signature that
   // TypeScript's structural interfaces don't declare.
-  const metricsJson = { front: input.frontResult, side: input.sideResult } as unknown as Prisma.InputJsonValue;
+  const metricsJson = { front: input.frontResult, side: input.sideResult, assessment: input.assessment ?? null } as unknown as Prisma.InputJsonValue;
 
   return prisma.postureResult.create({
     data: {
