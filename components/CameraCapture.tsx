@@ -17,6 +17,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [mirror, setMirror] = useState(false);
   const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -60,6 +61,8 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
           return;
         }
         streamRef.current = stream;
+        const actualFacing = stream.getVideoTracks()[0]?.getSettings().facingMode;
+        setMirror(actualFacing ? actualFacing === "user" : facing === "user");
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
@@ -137,7 +140,7 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
   return (
     <div className="flex flex-col items-center gap-4 w-full">
       <div className="relative w-full max-w-md aspect-[3/4] max-h-[58vh] bg-black rounded-xl overflow-hidden">
-        <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
+        <video ref={videoRef} playsInline muted className="w-full h-full object-contain" style={{ transform: mirror ? "scaleX(-1)" : "none" }} />
         <GuideOverlay view={view} />
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -151,6 +154,8 @@ export default function CameraCapture({ view, onCapture }: CameraCaptureProps) {
         )}
       </div>
 
+      <button type="button" aria-pressed={mirror} onClick={() => setMirror(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">좌우 반전 · 거울 모드 {mirror ? "켜짐" : "꺼짐"}</button>
+      <p className="text-xs text-zinc-500">촬영 미리보기 방향만 바뀝니다. 분석용 사진은 원본 방향으로 저장됩니다.</p>
       <div className="flex items-center gap-2 rounded-full bg-zinc-100 p-1">
         {TIMER_OPTIONS.map((opt) => (
           <button
