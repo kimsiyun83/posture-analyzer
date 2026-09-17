@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getDashboardStats, listStaff } from "@/lib/services/admin";
@@ -12,7 +13,7 @@ export default async function AdminPage() {
 
   return (
     <div className="flex flex-col gap-8 pb-16">
-      <h1 className="text-xl font-bold text-zinc-900">관리자 대시보드</h1>
+      <h1 className="text-xl font-bold text-zinc-900">관리자 대시보드</h1><Link className="care-primary" href="/admin/customers">고객 검사 기록 · 관리자 설정</Link>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="활성 회원" value={stats.activeMembers.toLocaleString("ko-KR")} />

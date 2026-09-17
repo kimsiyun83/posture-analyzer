@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { Suspense, useRef, useState } from "react";
 import Link from "next/link";
+import { CustomerSave } from "@/components/CustomerAccess";
 import { useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
 import PostureCanvas from "@/components/PostureCanvas";
@@ -20,7 +21,6 @@ import {
   DIRECTIONS,
   checkedPixels,
   recommend,
-  saveRecord,
   type Goal,
   type AssessmentRecord,
 } from "@/lib/assessment";
@@ -58,7 +58,6 @@ function Assessment() {
   const [discomfort, setDiscomfort] = useState(false);
   const [consent, setConsent] = useState(false);
   const [record, setRecord] = useState<AssessmentRecord | null>(null);
-  const [saved, setSaved] = useState(false);
   const [memberSaved, setMemberSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const index = shots.length;
@@ -426,25 +425,7 @@ function Assessment() {
               dateLabel={new Date(record.date).toLocaleString("ko-KR")}
             />
             <div className="save-actions">
-              <button
-                className="care-primary"
-                disabled={saved}
-                onClick={() => {
-                  try {
-                    saveRecord(record);
-                    setSaved(true);
-                    setError("");
-                  } catch {
-                    setError(
-                      "기기에 저장하지 못했습니다. 브라우저 저장 공간을 확인하거나 PDF로 보관해 주세요.",
-                    );
-                  }
-                }}
-              >
-                {saved
-                  ? "✓ 이 기기에 저장했어요"
-                  : "이 기기에 저장 (사진 제외)"}
-              </button>
+              <CustomerSave kind="posture" data={record} clientId={record.id} />
               {memberId && (
                 <button
                   className="care-secondary"

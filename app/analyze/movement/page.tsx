@@ -1,9 +1,9 @@
 "use client";
 /* Browser-only saved records are loaded after hydration. */
-/* eslint-disable react-hooks/set-state-in-effect */
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import {CustomerSave} from "@/components/CustomerAccess";
 export default function Page() {
   return (
     <Suspense>
@@ -21,7 +21,7 @@ function Movement() {
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [side, setSide] = useState<"left" | "right">("left");
-  const [message, setMessage] = useState("");
+  const [complete, setComplete] = useState<{id:string;data:{left:number;right:number;count:number;seconds:number;source:string}}|null>(null);
   const [saved, setSaved] = useState(false);
   const start = useRef(0);
   useEffect(() => {
@@ -90,7 +90,7 @@ function Movement() {
                     onClick={() => {
                       setSide(s);
                       setSeconds(0);
-                      setSaved(false);
+                      setSaved(false);setComplete(null);
                     }}
                   >
                     {s === "left" ? "왼발" : "오른발"}
@@ -125,7 +125,7 @@ function Movement() {
               className="care-primary"
               disabled={chair && seconds >= 30}
               onClick={() => {
-                setSaved(false);
+                setSaved(false);setComplete(null);
                 if (running) stop();
                 else setRunning(true);
               }}
@@ -138,8 +138,8 @@ function Movement() {
                 setRunning(false);
                 setSeconds(0);
                 setCount(0);
-                setSaved(false);
-                setMessage("");
+                setSaved(false);setComplete(null);
+                setComplete(null);
               }}
             >
               타이머 초기화
@@ -167,7 +167,7 @@ function Movement() {
                   value={s === "left" ? left : right}
                   onChange={(e) => {
                     (s === "left" ? setLeft : setRight)(e.target.value);
-                    setSaved(false);
+                    setSaved(false);setComplete(null);
                   }}
                 />
               </label>
@@ -184,84 +184,15 @@ function Movement() {
           className="care-primary"
           disabled={!valid || running || saved}
           onClick={() => {
-            try {
-              const raw = JSON.parse(
-                localStorage.getItem("lulu:movement:v1") || "[]",
-              );
-              const entries = Array.isArray(raw) ? raw : [];
-              localStorage.setItem(
-                "lulu:movement:v1",
-                JSON.stringify(
-                  [
-                    {
-                      kind,
-                      date: new Date().toISOString(),
-                      left: Number(left),
-                      right: Number(right),
-                      count,
-                    },
-                    ...entries,
-                  ].slice(0, 30),
-                ),
-              );
-              setMessage("이 기기에 움직임 기록을 저장했습니다.");
-              setSaved(true);
-            } catch {
-              setMessage(
-                "저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.",
-              );
-            }
+            setComplete({id:crypto.randomUUID(),data:{left:Number(left),right:Number(right),count,seconds:chair?30:seconds,source:"manual"}});
+            setSaved(true);
           }}
         >
-          {saved ? "✓ 저장 완료" : "이 기기에 기록 저장"}
+          {saved ? "✓ 저장 완료" : "검사 완료 · 계정에 저장"}
         </button>
-        <p role="status">{message}</p>
-        <MovementHistory kind={kind} refresh={saved} />
+        {complete && <CustomerSave kind={kind} data={complete.data} clientId={complete.id}/>}
+        <Link className="care-secondary" href="/customer">내 전체 검사 기록</Link>
       </main>
     </div>
-  );
-}
-function MovementHistory({
-  kind,
-  refresh,
-}: {
-  kind: string;
-  refresh: boolean;
-}) {
-  const [rows, setRows] = useState<
-    { kind: string; date: string; left: number; right: number; count: number }[]
-  >([]);
-  useEffect(() => {
-    try {
-      const data = JSON.parse(localStorage.getItem("lulu:movement:v1") || "[]");
-      if (Array.isArray(data))
-        setRows(
-          data.filter(
-            (r) =>
-              r.kind === kind &&
-              typeof r.date === "string" &&
-              [r.left, r.right, r.count].every(Number.isFinite),
-          ),
-        );
-    } catch {
-      /* no valid local history */
-    }
-  }, [kind, refresh]);
-  return (
-    <section className="care-card">
-      <h2>이전 움직임 기록</h2>
-      {rows.length ? (
-        rows.slice(0, 5).map((r, i) => (
-          <p key={i}>
-            {new Date(r.date).toLocaleDateString("ko-KR")} ·{" "}
-            {kind === "chair"
-              ? `${r.count}회`
-              : `왼쪽 ${r.left} / 오른쪽 ${r.right} ${kind === "scratch" ? "cm" : "초"}`}
-          </p>
-        ))
-      ) : (
-        <p>저장한 기록이 없습니다.</p>
-      )}
-    </section>
   );
 }

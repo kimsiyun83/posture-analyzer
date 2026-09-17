@@ -24,8 +24,6 @@ import {
   Tooltip,
 } from "recharts";
 import {
-  readRecords,
-  RECORD_KEY,
   type AssessmentRecord,
   recommend,
 } from "@/lib/assessment";
@@ -37,11 +35,11 @@ export default function CareHome() {
   const [records, setRecords] = useState<AssessmentRecord[]>([]);
   const [notice, setNotice] = useState(false);
   const [selected, setSelected] = useState<AssessmentRecord | null>(null);
-  const [message, setMessage] = useState("");
   // Read browser-only records after hydration.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRecords(readRecords());
+    fetch("/api/customer/records").then(async r => {
+      if (r.ok) { const d = await r.json(); setRecords(d.records.filter((r: {kind: string}) => r.kind === "posture").map((r: {id:string; createdAt:string; data:AssessmentRecord}) => ({...r.data,id:r.id,date:r.createdAt}))); }
+    }).catch(() => {});
   }, []);
   const latest = records[0];
   const summary = latest ? summarizeReport(latest.front, latest.side) : null;
@@ -176,7 +174,7 @@ export default function CareHome() {
         {tab === "reports" && (
           <>
             <h1>내 리포트</h1>
-            <p className="muted">이 기기에 저장한 측정 기록입니다.</p>
+            <p className="muted">로그인한 계정의 최근 측정 기록입니다.</p>
             {selected ? (
               <>
                 <button className="text-link" onClick={() => setSelected(null)}>
@@ -212,7 +210,7 @@ export default function CareHome() {
               <div className="care-card empty-panel">
                 <ChartPie size={40} />
                 <h2>아직 기록이 없어요</h2>
-                <p>검사 완료 후 ‘이 기기에 저장’을 눌러주세요.</p>
+                <p>로그인하면 검사 완료 시 계정에 저장됩니다.</p>
                 <Link href="/analyze" className="care-primary">
                   첫 검사 시작하기
                 </Link>
@@ -257,33 +255,9 @@ export default function CareHome() {
             <section className="care-card">
               <h2>내 기록 관리</h2>
               <p>저장된 검사 {records.length}개</p>
-              <p className="muted">
-                사진은 이 기기의 기록에 저장하지 않습니다. 브라우저 데이터를
-                지우면 기록도 삭제됩니다.
-              </p>
-              <button
-                className="care-secondary"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "이 기기의 체형·움직임 기록을 모두 삭제할까요?",
-                    )
-                  ) {
-                    try {
-                      localStorage.removeItem(RECORD_KEY);
-                      localStorage.removeItem("lulu:movement:v1");
-                      setRecords([]);
-                      setSelected(null);
-                      setMessage("기록을 삭제했습니다.");
-                    } catch {
-                      setMessage("기록을 삭제하지 못했습니다.");
-                    }
-                  }
-                }}
-              >
-                기기 기록 삭제
-              </button>
-              <p role="status">{message}</p>
+              <p className="muted">검사 결과를 계정에 저장해 다른 기기에서도 확인할 수 있습니다.</p>
+              <Link className="care-primary" href="/customer">로그인 · 회원가입 · 내 전체 기록</Link>
+              <Link className="care-secondary" href="/admin/customers">관리자 설정 · 고객 검사 관리</Link>
             </section>
             <Link className="care-card record-row" href="/members">
               직원 · 회원 관리 <ArrowUpRight />
@@ -359,10 +333,12 @@ export function TestCatalog() {
           },
           {
             name: "한발 서기 균형 기록",
-            desc: "직원과 함께 좌우 유지 시간을 기록합니다.",
-            href: "/analyze/movement?test=balance",
+            desc: "카메라로 발을 들면 시작, 내리면 자동 종료합니다.",
+            href: "/analyze/live?test=balance",
             Icon: PersonSimpleWalk,
           },
+          {name: "어깨 실시간 각도", desc: "몸통과 팔의 각도를 카메라로 확인합니다.", href: "/analyze/live?test=shoulder", Icon: PersonSimple},
+          {name: "팔꿈치 실시간 각도", desc: "팔꿈치 굽힘 각도를 실시간 측정합니다.", href: "/analyze/live?test=elbow", Icon: PersonSimple},
           {
             name: "30초 의자 일어서기",
             desc: "30초 동안 직원이 확인한 횟수를 기록합니다.",

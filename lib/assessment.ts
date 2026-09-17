@@ -5,7 +5,6 @@ import {
   collectReadings,
 } from "./pose/metrics";
 import { type PoseLandmarks, LM } from "./pose/landmarks";
-import { parseReportMetrics } from "./pose/report-details";
 import type { ProgramType } from "./pose/programs";
 export const DIRECTIONS = ["정면", "오른쪽 측면", "후면", "왼쪽 측면"] as const;
 export type Goal = "balance" | "strength" | "mobility";
@@ -100,35 +99,4 @@ export function checkedPixels(
   if (Math.abs(shoulder.y - ankle.y) < 0.15)
     throw new Error("전신 크기가 너무 작습니다. 카메라 거리를 조절해 주세요.");
   return lm.map((p) => ({ ...p, x: p.x * width, y: p.y * height }));
-}
-export const RECORD_KEY = "lulu:assessments:v2";
-export function readRecords(): AssessmentRecord[] {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
-    return Array.isArray(raw)
-      ? raw.filter(
-          (r): r is AssessmentRecord =>
-            !!r &&
-            typeof r === "object" &&
-            typeof r.id === "string" &&
-            typeof r.date === "string" &&
-            !!parseReportMetrics(r) &&
-            !!parseReportMetrics({ front: r.front, side: r.right }) &&
-            ["balance", "strength", "mobility"].includes(r.goal) &&
-            typeof r.discomfort === "boolean" &&
-            Number.isFinite(r.back?.shoulder) &&
-            Number.isFinite(r.back?.hip),
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-export function saveRecord(record: AssessmentRecord) {
-  localStorage.setItem(
-    RECORD_KEY,
-    JSON.stringify(
-      [record, ...readRecords().filter((r) => r.id !== record.id)].slice(0, 30),
-    ),
-  );
 }

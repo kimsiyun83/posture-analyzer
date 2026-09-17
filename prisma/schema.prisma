@@ -439,3 +439,36 @@ model AdKeywordSnapshot {
   @@index([keyword])
   @@index([accountId])
 }
+
+model Customer {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  active Boolean @default(true)
+  consentAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  records CustomerRecord[]
+}
+model CustomerRecord {
+  id String @id @default(cuid())
+  customerId String
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  clientId String
+  kind String
+  data Json
+  createdAt DateTime @default(now())
+  @@unique([customerId, clientId])
+  @@index([customerId, createdAt])
+}
+model PortalSettings {
+  id String @id @default("main")
+  signupEnabled Boolean @default(true)
+  cameraEnabled Boolean @default(true)
+  updatedAt DateTime @updatedAt
+}
+model PortalRateLimit {
+  key String @id
+  count Int
+  resetAt DateTime
+}

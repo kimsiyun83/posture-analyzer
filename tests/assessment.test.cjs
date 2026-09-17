@@ -9,6 +9,7 @@ const out = mkdtempSync(join(tmpdir(), "assessment-"));
 execFileSync(process.execPath, [
   "node_modules/typescript/bin/tsc",
   "lib/assessment.ts",
+  "lib/pose/report-details.ts",
   "--module",
   "commonjs",
   "--target",
