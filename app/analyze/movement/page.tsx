@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import ScratchMeasurementGuide from "@/components/ScratchMeasurementGuide";
 import {CustomerSave} from "@/components/CustomerAccess";
 export default function Page() {
   return (
@@ -78,6 +79,7 @@ function Movement() {
             정상치 판정 기능이 아닙니다.
           </p>
         </section>
+        {scratch && <ScratchMeasurementGuide/>}
         {!scratch && (
           <section className="care-card empty-panel">
             {!chair && (
@@ -151,7 +153,7 @@ function Movement() {
             <h2>좌우 비교 기록</h2>
             {(["left", "right"] as const).map((s) => (
               <label className="check-label" key={s}>
-                {s === "left" ? "왼쪽" : "오른쪽"}{" "}
+                {scratch ? (s === "left" ? "왼팔 위로" : "오른팔 위로") : (s === "left" ? "왼쪽" : "오른쪽")}{" "}
                 {scratch ? "손끝 간격 (cm)" : "유지 시간 (초)"}
                 <input
                   style={{

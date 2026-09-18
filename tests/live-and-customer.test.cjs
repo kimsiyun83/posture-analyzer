@@ -10,7 +10,7 @@ test('angles account for camera aspect ratio and reject zero-length bones',()=>{
 const feet=(raised=.8,support=.8)=>({raised,support,scale:.3});
 function ready(){let s=live.freshBalance();for(let t=100;t<=1200;t+=100)s=live.stepBalance(s,t,feet());assert.equal(s.phase,'ready');return s;}
 test('balance requires grounded calibration, ignores brief lift, finishes once at first confirmed landing',()=>{let s=ready();s=live.stepBalance(s,1300,feet(.72));s=live.stepBalance(s,1400,feet());assert.equal(s.phase,'ready');assert.equal(s.liftAt,0);for(let t=1500;t<=2200;t+=100)s=live.stepBalance(s,t,feet(.72));assert.equal(s.phase,'timing');for(let t=2300;t<=2500;t+=100)s=live.stepBalance(s,t,feet());assert.equal(s.phase,'done');assert.equal(s.seconds,.8);assert.equal(live.stepBalance(s,3000,feet(.72)).seconds,.8);});
-test('tracking loss and moved supporting foot invalidate a timed attempt',()=>{let s=ready();for(let t=1300;t<=1800;t+=100)s=live.stepBalance(s,t,feet(.72));assert.equal(s.phase,'timing');assert.equal(live.stepBalance(s,1900,null).phase,'invalid');assert.equal(live.stepBalance(s,1900,feet(.72,.7)).phase,'invalid');assert.equal(live.stepBalance(s,2800,feet(.72)).phase,'invalid');});
+test('tracking loss and moved supporting foot invalidate a timed attempt',()=>{let s=ready();for(let t=1300;t<=1800;t+=100)s=live.stepBalance(s,t,feet(.72));assert.equal(s.phase,'timing');assert.equal(live.stepBalance(s,1900,null).phase,'timing');assert.equal(live.stepBalance(s,2400,null).phase,'invalid');let drift=live.stepBalance(s,1900,feet(.72,.7));assert.equal(drift.phase,'timing');drift=live.stepBalance(drift,2200,feet(.72,.7));assert.equal(drift.phase,'invalid');assert.equal(live.stepBalance(s,2800,feet(.72)).phase,'invalid');});
 test('low visibility and out-of-frame joints cannot pass quality checks',()=>{assert.equal(live.visible([{x:.5,y:.5,visibility:.4}],[0]),false);assert.equal(live.visible([{x:1.1,y:.5,visibility:1}],[0]),false);});
 const validator=load('lib/customer-record.ts',{'./pose/report-details':{parseReportMetrics:()=>null}});
 test('record validation rejects nonfinite, negative, unfinished, and unknown measurements',()=>{for(const d of [{left:-1,right:4,source:'camera'},{left:NaN,right:4,source:'camera'},{left:181,right:4,source:'camera'}])assert.equal(validator.validCustomerRecord('elbow',d),false);assert.equal(validator.validCustomerRecord('chair',{count:5,seconds:15,source:'manual'}),false);assert.equal(validator.validCustomerRecord('balance',{left:10,right:12,source:'camera'}),true);assert.equal(validator.validCustomerRecord('other',{}),false);});
@@ -50,4 +50,18 @@ test('standing ankle jitter does not start balance timing',()=>{
  let s=ready();
  for(let t=1300;t<5000;t+=100)s=live.stepBalance(s,t,feet(.8+(t%200? .004:-.004)));
  assert.equal(s.phase,'ready');assert.equal(s.seconds,0);
+});
+
+test('one-frame support jitter recovers without ending the measurement',()=>{
+ let s=ready();for(let t=1300;t<=1800;t+=100)s=live.stepBalance(s,t,feet(.72));
+ s=live.stepBalance(s,1900,feet(.72,.7));assert.equal(s.phase,'timing');
+ s=live.stepBalance(s,2000,feet(.72));assert.equal(s.phase,'timing');assert.equal(s.driftAt,0);
+});
+test('brief tracking dropout does not fabricate a landing; long gap rejects result',()=>{
+ let s=ready();for(let t=1300;t<=1800;t+=100)s=live.stepBalance(s,t,feet(.72));
+ s=live.stepBalance(s,1900,null);s=live.stepBalance(s,2000,feet(.72));
+ assert.equal(s.phase,'timing');
+ s=live.stepBalance(s,2100,feet());s=live.stepBalance(s,2200,null);
+ s=live.stepBalance(s,2300,feet());assert.equal(s.phase,'timing');
+ s=live.stepBalance(s,2400,feet());s=live.stepBalance(s,2500,feet());assert.equal(s.phase,'done');
 });
