@@ -19,6 +19,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [mirror, setMirror] = useState(false);
+  const [fillFrame, setFillFrame] = useState(true);
   const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -36,7 +37,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
       // the root cause of "switch camera" needing two clicks to visibly take effect.
       try {
         return await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: facing } },
+          video: { facingMode: { exact: facing }, width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 0.75 } },
           audio: false,
         });
       } catch (cause) {
@@ -44,7 +45,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
         if (cancelled || !(cause instanceof DOMException) ||
             !["OverconstrainedError", "NotFoundError"].includes(cause.name)) throw cause;
         return navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facing } }, audio: false,
+          video: { facingMode: { ideal: facing }, width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 0.75 } }, audio: false,
         });
       }
     }
@@ -140,7 +141,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
   return (
     <div className="flex flex-col items-center gap-4 w-full">
       <div className="capture-large-preview relative w-full bg-black rounded-xl overflow-hidden">
-        <video ref={videoRef} playsInline muted className="w-full h-full object-contain" style={{ transform: mirror ? "scaleX(-1)" : "none" }} />
+        <video ref={videoRef} playsInline muted className="w-full h-full" style={{ objectFit: fillFrame ? "cover" : "contain", objectPosition: "center", transform: mirror ? "scaleX(-1)" : "none" }} />
         <GuideOverlay view={view} />
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40">
@@ -160,6 +161,10 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
           {captureError}
         </div>
       )}
+      <button type="button" aria-pressed={fillFrame} onClick={() => setFillFrame(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">
+        {fillFrame ? "화면 채움 · 전체 영상 보기" : "전체 영상 · 크게 보기"}
+      </button>
+      <p className="text-xs text-zinc-500">화면 채움은 가장자리가 일부 잘릴 수 있습니다. 머리·발 또는 팔이 잘리면 전체 영상으로 전환하세요.</p>
       <button type="button" aria-pressed={mirror} onClick={() => setMirror(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">좌우 반전 · 거울 모드 {mirror ? "켜짐" : "꺼짐"}</button>
       <p className="text-xs text-zinc-500">촬영 미리보기 방향만 바뀝니다. 분석용 사진은 원본 방향으로 저장됩니다.</p>
       <div className="flex items-center gap-2 rounded-full bg-zinc-100 p-1">
