@@ -284,6 +284,9 @@ function Assessment() {
             {(stage === "capture" || stage === "review") && (
               <div hidden={stage !== "capture" || busy}>
                 <CameraCapture
+                  active={stage === "capture" && !busy}
+                  step={index}
+                  onClose={() => setStage("prepare")}
                   view={index === 2 ? "back" : index === 1 || index === 3 ? "side" : "front"}
                   onCapture={capture}
                   captureError={error}

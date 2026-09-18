@@ -2,15 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {FilesetResolver,PoseLandmarker} from "@mediapipe/tasks-vision";
+import {drawPose} from "@/lib/pose/live-draw";
+import FaceTrackingOverlay from "./FaceTrackingOverlay";
+import CameraChrome,{useCameraScreen} from "./CameraChrome";
+
 interface CameraCaptureProps {
+  active?: boolean;
+  step?: number;
+  onClose?: () => void;
   captureError?: string;
   view: "front" | "side" | "back";
   onCapture: (dataUrl: string, width: number, height: number) => void;
 }
 
-const TIMER_OPTIONS = [0, 3, 5] as const;
 
-export default function CameraCapture({ view, onCapture, captureError }: CameraCaptureProps) {
+
+export default function CameraCapture({ view, onCapture, captureError, active=true, step=0, onClose }: CameraCaptureProps) {
+  useCameraScreen(active);
+  const poseCanvas=useRef<HTMLCanvasElement>(null);
+  const [tracking,setTracking]=useState("전신 추적 준비 중…");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -20,7 +31,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
   const [ready, setReady] = useState(false);
   const [mirror, setMirror] = useState(false);
   const [fillFrame, setFillFrame] = useState(true);
-  const [delay, setDelay] = useState<(typeof TIMER_OPTIONS)[number]>(0);
+  const [delay, setDelay] = useState<0|3|5>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   const stopStream = useCallback(() => {
@@ -96,6 +107,25 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
     };
   }, []);
 
+  useEffect(()=>{
+    if(!ready||!active)return;
+    let cancelled=false,model:PoseLandmarker|null=null,frame=0,last=0,lastVideo=-1;
+    async function start(){try{
+      const files=await FilesetResolver.forVisionTasks("/mediapipe/wasm");if(cancelled)return;
+      const create=(delegate:"GPU"|"CPU")=>PoseLandmarker.createFromOptions(files,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",delegate},runningMode:"VIDEO",numPoses:2,minPoseDetectionConfidence:.65,minTrackingConfidence:.65});
+      try{model=await create("GPU");}catch{if(cancelled)return;model=await create("CPU");}
+      if(cancelled){model.close();return;}
+      function tick(now:number){if(cancelled)return;frame=requestAnimationFrame(tick);const v=videoRef.current,cv=poseCanvas.current;if(!v||!cv||v.readyState<2||document.hidden||now-last<80||lastVideo===v.currentTime)return;last=now;lastVideo=v.currentTime;
+        const ctx=cv.getContext("2d");if(!ctx)return;cv.width=v.videoWidth;cv.height=v.videoHeight;
+        try{const result=model!.detectForVideo(v,now);const points=result.landmarks.length===1?result.landmarks[0]:[];drawPose(ctx,points,cv.width,cv.height);
+          const full=[11,12,23,24,25,26,27,28].every(i=>points[i]&&(points[i].visibility??0)>.65);
+          setTracking(result.landmarks.length>1?"한 사람만 화면에 들어오세요":full?"전신 추적 중 · 자세를 유지하고 촬영하세요":"전신이 보이도록 거리를 조절해 주세요");
+        }catch{ctx.clearRect(0,0,cv.width,cv.height);setTracking("실시간 추적 중단 · 촬영 후 분석은 가능합니다");cancelAnimationFrame(frame);}
+      }frame=requestAnimationFrame(tick);
+    }catch{if(!cancelled)setTracking("실시간 모델 로드 실패 · 촬영 후 분석은 가능합니다");}}
+    void start();return()=>{cancelled=true;cancelAnimationFrame(frame);model?.close();};
+  },[ready,active,facing]);
+
   const takeShot = useCallback(() => {
     const video = videoRef.current;
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
@@ -138,109 +168,18 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
     setFacing((f) => (f === "environment" ? "user" : "environment"));
   };
 
-  return (
-    <div className="flex flex-col items-center gap-4 w-full">
-      <div className="capture-large-preview relative w-full bg-black rounded-xl overflow-hidden">
-        <video ref={videoRef} playsInline muted className="w-full h-full" style={{ objectFit: fillFrame ? "cover" : "contain", objectPosition: "center", transform: mirror ? "scaleX(-1)" : "none" }} />
-        <GuideOverlay view={view} />
-        {countdown !== null && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-            <span className="text-8xl font-bold text-white drop-shadow-lg">{countdown}</span>
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-white bg-black/70">
-            {error}
-          </div>
-        )}
-      </div>
-
-      {captureError && (
-        <div className="error-message w-full" role="alert" aria-live="assertive" aria-atomic="true">
-          <strong className="block mb-1">촬영을 다시 확인해 주세요</strong>
-          {captureError}
-        </div>
-      )}
-      <button type="button" aria-pressed={fillFrame} onClick={() => setFillFrame(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">
-        {fillFrame ? "화면 채움 · 전체 영상 보기" : "전체 영상 · 크게 보기"}
-      </button>
-      <p className="text-xs text-zinc-500">화면 채움은 가장자리가 일부 잘릴 수 있습니다. 머리·발 또는 팔이 잘리면 전체 영상으로 전환하세요.</p>
-      <button type="button" aria-pressed={mirror} onClick={() => setMirror(value => !value)} className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium">좌우 반전 · 거울 모드 {mirror ? "켜짐" : "꺼짐"}</button>
-      <p className="text-xs text-zinc-500">촬영 미리보기 방향만 바뀝니다. 분석용 사진은 원본 방향으로 저장됩니다.</p>
-      <div className="flex items-center gap-2 rounded-full bg-zinc-100 p-1">
-        {TIMER_OPTIONS.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => setDelay(opt)}
-            disabled={countdown !== null}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
-              delay === opt ? "bg-zinc-900 text-white" : "text-zinc-600"
-            }`}
-          >
-            {opt === 0 ? "즉시 촬영" : `${opt}초 타이머`}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex gap-3">
-        {countdown !== null ? (
-          <button
-            type="button"
-            onClick={handleCancelCountdown}
-            className="rounded-full border border-zinc-300 px-6 py-3 text-sm font-medium"
-          >
-            취소
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleCaptureClick}
-            disabled={!ready}
-            className="rounded-full bg-zinc-900 px-6 py-3 text-white font-medium disabled:opacity-40"
-          >
-            촬영하기
-          </button>
-        )}
-        {devices.length > 1 && (
-          <button
-            type="button"
-            onClick={handleSwitchCamera}
-            disabled={countdown !== null || !ready}
-            className="rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium disabled:opacity-40"
-          >
-            카메라 전환
-          </button>
-        )}
-      </div>
+  return <div className="camera-screen" role="region" aria-label="전체화면 체형 촬영">
+    <div className="camera-viewport">
+      <video ref={videoRef} playsInline muted style={{objectFit:fillFrame?"cover":"contain",transform:mirror?"scaleX(-1)":"none"}}/>
+      <canvas ref={poseCanvas} aria-hidden="true" style={{objectFit:fillFrame?"cover":"contain",transform:mirror?"scaleX(-1)":"none"}}/>
+      {ready&&active&&view!=="back"&&<FaceTrackingOverlay video={videoRef} active={active} mirror={mirror} fillFrame={fillFrame}/>}
+      <CameraChrome title={`${step+1}/4 · ${["정면","오른쪽 측면","후면","왼쪽 측면"][step]}`} progress={step/4} onClose={()=>{handleCancelCountdown();onClose?.();}}/>
+      {countdown!==null&&<div className="camera-countdown" role="status">{countdown}</div>}
+      <div className="camera-instruction" role={error||captureError?"alert":"status"}>{error||captureError||tracking}<small>{view==="front"?"앞모습을 촬영해 주세요.":view==="back"?"등을 카메라 쪽으로 보여 주세요.":"옆모습의 귀·어깨·골반·발목이 보이게 서 주세요."}</small></div>
     </div>
-  );
-}
-
-function GuideOverlay({ view }: { view: "front" | "side" | "back" }) {
-  return (
-    <svg
-      className="absolute inset-0 w-full h-full pointer-events-none opacity-70"
-      viewBox="0 0 300 400"
-      preserveAspectRatio="none"
-    >
-      <line x1="150" y1="0" x2="150" y2="400" stroke="#22d3ee" strokeWidth="1" strokeDasharray="6 6" />
-      {view !== "side" ? (
-        <>
-          <line x1="60" y1="90" x2="240" y2="90" stroke="#facc15" strokeWidth="1" strokeDasharray="4 4" />
-          <line x1="70" y1="230" x2="230" y2="230" stroke="#facc15" strokeWidth="1" strokeDasharray="4 4" />
-          <text x="150" y="380" fill="#fff" fontSize="12" textAnchor="middle">
-            {view === "back" ? "후면: 등을 카메라 쪽으로 보여주세요" : "정면: 양팔을 자연스럽게 내리고 서 주세요"}
-          </text>
-        </>
-      ) : (
-        <>
-          <line x1="20" y1="0" x2="20" y2="400" stroke="#facc15" strokeWidth="1" strokeDasharray="4 4" />
-          <text x="150" y="380" fill="#fff" fontSize="12" textAnchor="middle">
-            측면: 귀 · 어깨 · 골반 · 무릎 · 발목이 모두 보이게 서주세요
-          </text>
-        </>
-      )}
-    </svg>
-  );
+    <div className="camera-controls">
+      <div className="camera-options"><button onClick={()=>setMirror(v=>!v)} aria-pressed={mirror}>거울 {mirror?"ON":"OFF"}</button><button onClick={()=>setFillFrame(v=>!v)}>{fillFrame?"전체 영상 보기":"화면 채우기"}</button><label>사진 선택<input type="file" accept="image/jpeg,image/png,image/webp" disabled={countdown!==null} onChange={e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>15*1024*1024){setError("15MB 이하 사진을 선택해 주세요.");return;}const reader=new FileReader();reader.onload=()=>onCapture(String(reader.result),0,0);reader.onerror=()=>setError("사진을 읽지 못했습니다.");reader.readAsDataURL(f);}}/></label></div>
+      <div className="camera-actions"><button disabled={countdown!==null} onClick={()=>setDelay(d=>d===0?3:d===3?5:0)} aria-label="타이머 변경">◷<small>{delay?`${delay}초`:"OFF"}</small></button><button className="camera-shutter" disabled={!ready} onClick={countdown!==null?handleCancelCountdown:handleCaptureClick} aria-label={countdown!==null?"촬영 취소":"촬영하기"}>{countdown!==null?"취소":""}</button><button onClick={handleSwitchCamera} disabled={countdown!==null||!ready||devices.length<2} aria-label="카메라 전환">↻<small>카메라</small></button></div>
+    </div>
+  </div>;
 }

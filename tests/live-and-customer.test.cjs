@@ -65,3 +65,12 @@ test('brief tracking dropout does not fabricate a landing; long gap rejects resu
  s=live.stepBalance(s,2300,feet());assert.equal(s.phase,'timing');
  s=live.stepBalance(s,2400,feet());s=live.stepBalance(s,2500,feet());assert.equal(s.phase,'done');
 });
+
+test('live skeleton never draws occluded or invalid joints and clears previous frame',()=>{
+ const draw=load('lib/pose/live-draw.ts',{'@mediapipe/tasks-vision':{PoseLandmarker:{POSE_CONNECTIONS:[{start:0,end:1},{start:1,end:2}]}}});
+ const calls=[];const ctx={clearRect:(...a)=>calls.push(['clear',...a]),beginPath(){},moveTo:(...a)=>calls.push(['move',...a]),lineTo:(...a)=>calls.push(['line',...a]),stroke(){},arc:(...a)=>calls.push(['dot',...a]),fill(){}};
+ draw.drawPose(ctx,[{x:.2,y:.3,visibility:1},{x:.4,y:.5,visibility:1},{x:.6,y:.7,visibility:.2}],720,960);
+ assert.equal(calls.filter(c=>c[0]==='line').length,1);assert.equal(calls.filter(c=>c[0]==='dot').length,2);assert.deepEqual(calls.find(c=>c[0]==='move'),['move',144,288]);
+ for(const p of [{x:NaN,y:.4},{x:-.1,y:.4},{x:.5,y:1.1}])assert.equal(draw.drawable(p),false);
+ calls.length=0;draw.drawPose(ctx,[],720,960);assert.deepEqual(calls,[['clear',0,0,720,960]]);
+});
