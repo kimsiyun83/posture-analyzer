@@ -139,7 +139,7 @@ export default function CameraCapture({ view, onCapture, captureError }: CameraC
 
   return (
     <div className="flex flex-col items-center gap-4 w-full">
-      <div className="relative w-full max-w-md aspect-[3/4] max-h-[58vh] bg-black rounded-xl overflow-hidden">
+      <div className="capture-large-preview relative w-full bg-black rounded-xl overflow-hidden">
         <video ref={videoRef} playsInline muted className="w-full h-full object-contain" style={{ transform: mirror ? "scaleX(-1)" : "none" }} />
         <GuideOverlay view={view} />
         {countdown !== null && (

@@ -24,3 +24,30 @@ test('non-admin cannot modify portal settings',async()=>{let wrote=false;const r
 function authMock(existing=null){const events=[];return {events,route:load('app/api/customer/auth/route.ts',{'next/server':{NextResponse:{json}},'next/headers':{cookies:async()=>({delete:()=>{}})},'@/lib/db':{prisma:{customer:{findUnique:async()=>existing,create:async q=>{events.push(q);return {id:'newCustomer'};}}}},'@/lib/auth':{hashPassword:async()=>'hashed',verifyPassword:async(p,h)=>h==='valid'&&p==='password123'},'@/lib/customer':{customerSession:async()=>null,setCustomerSession:async id=>events.push(id),sameOrigin:r=>r.headers.get('origin')==='https://test.example',portalSettings:async()=>({signupEnabled:true})},'@/lib/customer-rate-limit':{customerRateLimit:async()=>true}})};}
 test('signup requires consent and cannot create a staff/admin role from submitted data',async()=>{const x=authMock();const body={mode:'signup',name:'Test',email:'test@example.com',password:'password123',role:'admin'};assert.equal((await x.route.POST(request(body))).status,400);assert.equal(x.events.length,0);assert.equal((await x.route.POST(request({...body,consent:true}))).status,200);assert.equal(x.events[0].data.role,undefined);assert.equal(x.events[0].data.passwordHash,'hashed');});
 test('disabled account and wrong passwords cannot create a customer session',async()=>{for(const existing of [{id:'x',active:false,passwordHash:'valid'},{id:'x',active:true,passwordHash:'wrong'}]){const x=authMock(existing);assert.equal((await x.route.POST(request({email:'test@example.com',password:'password123'}))).status,401);assert.equal(x.events.length,0);}});
+test('balance calibrates at smaller full-body framing and completes lift/landing',()=>{
+ let s=live.freshBalance();
+ const sample=(raised=.8)=>({support:.8,raised,scale:.08});
+ for(let t=100;t<=1200;t+=100)s=live.stepBalance(s,t,sample());
+ assert.equal(s.phase,'ready');
+ for(let t=1300;t<=2400;t+=100)s=live.stepBalance(s,t,sample(.77));
+ assert.equal(s.phase,'timing');
+ for(let t=2500;t<=2800;t+=100)s=live.stepBalance(s,t,sample());
+ assert.equal(s.phase,'done');
+ assert.equal(s.seconds,1.2);
+});
+test('hidden toes do not reject visible ankles; missing ankles still reject',()=>{
+ const p=Array.from({length:33},()=>({x:.5,y:.5,visibility:1}));
+ p[11].y=p[12].y=.25;p[23].y=p[24].y=.45;p[27].y=p[28].y=.8;
+ p[31].visibility=p[32].visibility=0;
+ assert.ok(live.balanceFeet(p,true));
+ p[27].visibility=.2;assert.equal(live.balanceFeet(p,true),null);
+});
+test('median angle rejects one-frame spikes and small projected bones are rejected',()=>{
+ assert.equal(live.medianAngle([89,150,90]),90);
+ assert.equal(live.jointAngle({x:.51,y:.5},{x:.5,y:.5},{x:.5,y:.51},720,960),null);
+});
+test('standing ankle jitter does not start balance timing',()=>{
+ let s=ready();
+ for(let t=1300;t<5000;t+=100)s=live.stepBalance(s,t,feet(.8+(t%200? .004:-.004)));
+ assert.equal(s.phase,'ready');assert.equal(s.seconds,0);
+});
