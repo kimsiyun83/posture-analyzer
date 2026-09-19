@@ -11,13 +11,13 @@ export type SegmentKey=typeof SEGMENTS[number];
 export const SEGMENT_LABELS:Record<SegmentKey,string>={trunk:'몸통',leftArm:'왼팔',rightArm:'오른팔',leftLeg:'왼다리',rightLeg:'오른다리'};
 export type Reading={value:number;low?:number;high?:number};
 export type InbodyReport={version:1;measuredAt:string;sex:'male'|'female'|'unknown';values:Partial<Record<MetricKey,Reading>>;segments:{muscle:Partial<Record<SegmentKey,{kg?:number;percent?:number}>>;fat:Partial<Record<SegmentKey,{kg?:number;percent?:number}>>};cid:string;bodyType:string;image?:string;confirmed:true;archived?:boolean};
-export function parseReport(value:unknown):InbodyReport|null{
+export function parseReport(value:unknown,hasStoredImage=false):InbodyReport|null{
  if(!value||typeof value!=='object')return null;const d=value as InbodyReport;
  if(d.version!==1||d.confirmed!==true||typeof d.measuredAt!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(d.measuredAt)||!Number.isFinite(Date.parse(d.measuredAt))||!['male','female','unknown'].includes(d.sex)||!d.values||typeof d.values!=='object'||!d.segments)return null;
  const num=(v:unknown,max:number)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=max;
  const values:InbodyReport['values']={};
  for(const [key,,,max] of METRICS){const r=d.values[key];if(r===undefined)continue;if(!r||typeof r!=='object'||!num(r.value,max)||(r.low!==undefined&&!num(r.low,max))||(r.high!==undefined&&!num(r.high,max))||(r.low!==undefined&&r.high!==undefined&&r.low>=r.high))return null;values[key]={value:r.value,...(r.low!==undefined?{low:r.low}:{}),...(r.high!==undefined?{high:r.high}:{})};}
- if(!Object.keys(values).length)return null;
+ if(!Object.keys(values).length&&!d.image&&!hasStoredImage)return null;
  const segments:InbodyReport['segments']={muscle:{},fat:{}};
  for(const type of ['muscle','fat'] as const){if(!d.segments[type]||typeof d.segments[type]!=='object')return null;for(const key of SEGMENTS){const r=d.segments[type][key];if(r===undefined)continue;if(!r||typeof r!=='object'||(r.kg!==undefined&&!num(r.kg,300))||(r.percent!==undefined&&!num(r.percent,1000)))return null;segments[type][key]={...(r.kg!==undefined?{kg:r.kg}:{}),...(r.percent!==undefined?{percent:r.percent}:{})};}}
  if(typeof d.cid!=='string'||d.cid.length>80||typeof d.bodyType!=='string'||d.bodyType.length>80)return null;

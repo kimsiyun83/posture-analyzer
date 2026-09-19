@@ -31,3 +31,16 @@ test('sparse labels do not steal following labelled cells and merge rejects conf
  const merged=ib.mergeReportReadings([{weight:{value:70},muscle:{value:35}},{weight:{value:78},fat:{value:15}}]);
  assert.equal(merged.weight,undefined);assert.equal(merged.muscle.value,35);assert.equal(merged.fat.value,15);
 });
+
+test('photo-only records are accepted, but empty records and untrusted photo references are rejected',()=>{
+ const photo={...valid(),values:{},image:'data:image/jpeg;base64,/9j/AAAA'};
+ assert.ok(ib.parseReport(photo));assert.equal(ib.parseReport({...photo,image:undefined}),null);
+ assert.ok(ib.parseReport({...photo,image:undefined},true));
+ assert.equal(ib.parseReport({...photo,image:'https://invalid.example/photo.jpg'}),null);
+});
+test('authenticated customer can save a photo-only record without invented metrics',async()=>{
+ const x=route({id:'owner'});const data={...valid(),values:{},image:'data:image/jpeg;base64,/9j/AAAA'};
+ assert.equal((await x.r.POST(request({clientId:'photo-only-record-123',data}))).status,200);
+ assert.equal(Object.keys(x.calls[0].create.data.values).length,0);
+ assert.equal(x.calls[0].create.data.image,data.image);
+});
