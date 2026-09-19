@@ -25,19 +25,51 @@ export function parseReport(value:unknown):InbodyReport|null{
  return {version:1,confirmed:true,measuredAt:d.measuredAt,sex:d.sex,values,segments,cid:d.cid,bodyType:d.bodyType,...(d.image?{image:d.image}:{}),...(d.archived===true?{archived:true}:{})};
 }
 export function rangeLabel(r:Reading|undefined){if(!r)return '미기재';if(r.low===undefined||r.high===undefined)return '기준 미입력';return r.value<r.low?'표준이하':r.value>r.high?'표준이상':'표준';}
-// Conservative candidates only: ambiguous tables / history / graph ticks stay empty.
+// Parse labelled cells without treating graph ticks or conflicting readings as results.
 export function readReportText(raw:string){
- const values:InbodyReport['values']={};const lines=raw.split(/\r?\n/);
- for(const [key,label,,max,,aliases] of METRICS){const candidates:Reading[]=[];
-  for(const line of lines){const compact=line.replace(/\s/g,'').toLowerCase();const names=[label,...aliases].map(x=>x.replace(/\s/g,'').toLowerCase());const found=names.find(x=>compact.startsWith(x));if(!found)continue;
-   let tail=compact.slice(found.length).replace(/^\((kg|%|l|kcal|kg\/m²|kg\/m2|cm|lv|세|점|°)\)/,'');
-   const range=tail.match(/\((\d+(?:\.\d+)?)\s*[-~～]\s*(\d+(?:\.\d+)?)\)/);if(range)tail=tail.replace(range[0],'');
-   tail=tail.replace(/kg\/m[²2]/g,'');const numbers=tail.match(/\d+(?:\.\d+)?/g);if(numbers?.length!==1)continue;const value=Number(numbers[0]);if(value>max)continue;
-   const r:Reading={value};if(range&&+range[1]<+range[2]&&+range[2]<=max){r.low=+range[1];r.high=+range[2];}candidates.push(r);
+ const values:InbodyReport['values']={};
+ const normalize=(s:string)=>s.normalize('NFKC').replace(/\s/g,'').toLowerCase();
+ const names=METRICS.flatMap(([key,label,,,,aliases])=>[label,...aliases].map(name=>({key,name:normalize(name)}))).sort((a,b)=>b.name.length-a.name.length);
+ const escaped=names.map(x=>x.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+ const labels=new RegExp(escaped.join('|'),'g');
+ const candidates=new Map<MetricKey,Reading[]>();
+ const lines=raw.normalize('NFKC').split(/\r?\n/).map(normalize).filter(Boolean);
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];const matches=[...line.matchAll(labels)];
+  for(let j=0;j<matches.length;j++){
+   const m=matches[j],key=names.find(x=>x.name===m[0])!.key;
+   if(m.index!>0&&/[a-z가-힣]/.test(line[m.index!-1]))continue;
+   // A Korean/English translation of the same label is one cell.
+   let end=j+1;while(end<matches.length&&names.find(x=>x.name===matches[end][0])!.key===key)end++;
+   let tail=line.slice(matches[end-1].index!+matches[end-1][0].length,matches[end]?.index);
+   j=end-1;
+   // Sparse OCR often puts a value on the next line. Never cross another label.
+   if(!/\d/.test(tail.replace(/kg\/m[2²]/g,''))&&end===matches.length){
+    const next=lines[i+1];
+    if(next&&!names.some(x=>next.includes(x.name))&&/^[(:|]*\d/.test(next))tail+=next;
+   }
+   tail=tail.replace(/kg\/m[2²]/g,'');
+   const range=tail.match(/\((\d+(?:[.,]\d+)?)[~～–—-](\d+(?:[.,]\d+)?)\)/);
+   if(range)tail=tail.replace(range[0],'');
+   // Text after a label such as '조절' is a different measurement.
+   tail=tail.replace(/skeletalmusclemass|bodyfatmass|percentbodyfat/g,'');
+   if(/조절|변화|이력|history|control/.test(tail))continue;
+   const numbers=tail.match(/-?\d+(?:[.,]\d+)?/g);if(numbers?.length!==1)continue;
+   const number=(n:string)=>Number(n.replace(',','.'));
+   const value=number(numbers[0]),max=METRICS.find(m=>m[0]===key)![3];if(value<0||value>max)continue;
+   const r:Reading={value};if(range&&number(range[1])<number(range[2])&&number(range[2])<=max){r.low=number(range[1]);r.high=number(range[2]);}
+   candidates.set(key,[...(candidates.get(key)??[]),r]);
   }
-  if(candidates.length===1)values[key]=candidates[0];
  }
+ for(const [key,items] of candidates){if(items.every(r=>r.value===items[0].value))values[key]=items.find(r=>r.low!==undefined)??items[0];}
  return values;
+}
+
+// Conflicting OCR passes require manual confirmation instead of guessing.
+export function mergeReportReadings(passes:InbodyReport['values'][]){
+ const result:InbodyReport['values']={};
+ for(const [key] of METRICS){const items=passes.flatMap(p=>p[key]?[p[key]!]:[]);if(items.length&&items.every(r=>r.value===items[0].value))result[key]=items.find(r=>r.low!==undefined)??items[0];}
+ return result;
 }
 
 export function readSegments(raw:string):InbodyReport['segments']{

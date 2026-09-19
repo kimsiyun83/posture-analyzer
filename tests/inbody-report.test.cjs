@@ -17,3 +17,17 @@ test('inbody customer route bypasses staff login while staff admin routes remain
  const req=path=>({nextUrl:{pathname:path},url:'https://site.test'+path,cookies:{get:()=>undefined}});
  assert.equal((await proxy.proxy(req('/inbody'))).status,200);assert.equal((await proxy.proxy(req('/api/customer/inbody'))).status,200);assert.equal((await proxy.proxy(req('/api/admin/customer-settings'))).status,401);
 });
+
+test('OCR handles bilingual table cells, sparse lines, decimal commas and repeated identical results',()=>{
+ const r=ib.readReportText('체 중 (Weight) (kg) 73.2 (60.0~80.0) 단백질 (kg) 12.4\n골격근량 (kg)\n35.1\n체지방률 (%) 18,7\n체중 73.2');
+ assert.equal(r.weight.value,73.2);assert.equal(r.weight.low,60);assert.equal(r.protein.value,12.4);assert.equal(r.muscle.value,35.1);assert.equal(r.fatPercent.value,18.7);
+});
+test('OCR does not map targets, graph ticks, negative values or conflicting repeats to current readings',()=>{
+ const r=ib.readReportText('목표체중 65.0\n체지방량 조절 -2.0\n체중 70.0\n체중 71.0\n골격근량 70 80 90 100\n단백질 -1.0');
+ assert.equal(Object.keys(r).length,0);
+});
+test('sparse labels do not steal following labelled cells and merge rejects conflicting OCR passes',()=>{
+ const r=ib.readReportText('체중 (kg)\n골격근량 35.1');assert.equal(r.weight,undefined);assert.equal(r.muscle.value,35.1);
+ const merged=ib.mergeReportReadings([{weight:{value:70},muscle:{value:35}},{weight:{value:78},fat:{value:15}}]);
+ assert.equal(merged.weight,undefined);assert.equal(merged.muscle.value,35);assert.equal(merged.fat.value,15);
+});
