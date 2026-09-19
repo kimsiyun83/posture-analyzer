@@ -57,3 +57,20 @@ test('four-field OCR pairs labels and values across separate OCR columns without
  assert.equal(ocr.readInbodyBasics('인바디점수 80').score,undefined);
  assert.equal(ocr.visualRows([header,word('99.9',10,10,5)].join('\n')),'');
 });
+
+test('recognizes test dates, weekdays and Korean time without replacing them with today',()=>{
+ const ocr=load('lib/inbody-ocr.ts',{'./inbody-report':ib});
+ assert.equal(ocr.readInbodyDate('검사일시 2025. 07. 15. 오후 10:34'),'2025-07-15T22:34');
+ assert.equal(ocr.readInbodyDate('26.07.15(수) 22:34'),'2026-07-15T22:34');
+ assert.equal(ocr.readInbodyDate('검사일\n2024/03/02 09:10'),'2024-03-02T09:10');
+ assert.equal(ocr.readInbodyDate('생년월일 1984.01.10\n검사일 2023-08-10'),'2023-08-10T00:00');
+ for(const text of ['검사일 2025-02-30','생년월일 2020-01-01 10:00','2024/01/01','2024/01/01 10:00\n2025/01/01 10:00',''])assert.equal(ocr.readInbodyDate(text),null);
+});
+test('card layout pairs large values below labels across columns and rejects ambiguous candidates',()=>{
+ const ocr=load('lib/inbody-ocr.ts',{'./inbody-report':ib});
+ const header='level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
+ const word=(text,x,y,w=80,h=20)=>`5\t1\t1\t1\t1\t1\t${x}\t${y}\t${w}\t${h}\t95\t${text}`;
+ const tsv=[header,word('체중',20,100),word('골격근량',250,100),word('체지방률',480,100),word('73.2',20,145,90,40),word('35.1',250,145,90,40),word('21.2',480,145,90,40)].join('\n');
+ const r=ocr.readCardValues(tsv);assert.equal(r.weight.value,73.2);assert.equal(r.muscle.value,35.1);assert.equal(r.fatPercent.value,21.2);assert.equal(r.fat,undefined);
+ const conflict=ocr.readCardValues(tsv+'\n'+word('70.0',20,195));assert.equal(conflict.weight,undefined);
+});
