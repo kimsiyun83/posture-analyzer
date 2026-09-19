@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { customerSession,sameOrigin,portalSettings } from "@/lib/customer";
 import { validCustomerRecord } from "@/lib/customer-record";
 import type { Prisma } from "@/lib/generated/prisma/client";
-export async function GET(req:Request){const c=await customerSession();if(!c)return NextResponse.json({error:"로그인이 필요합니다."},{status:401});const page=Math.max(0,Math.min(100000,Number(new URL(req.url).searchParams.get("page"))||0));return NextResponse.json({records:await prisma.customerRecord.findMany({where:{customerId:c.id},orderBy:{createdAt:"desc"},skip:Math.floor(page)*50,take:50})},{headers:{"Cache-Control":"no-store"}});}
+export async function GET(req:Request){const c=await customerSession();if(!c)return NextResponse.json({error:"로그인이 필요합니다."},{status:401});const page=Math.max(0,Math.min(100000,Number(new URL(req.url).searchParams.get("page"))||0));const rows=await prisma.customerRecord.findMany({where:{customerId:c.id},orderBy:{createdAt:"desc"},skip:Math.floor(page)*50,take:50});const records=rows.map(r=>{if(r.kind!=="inbody")return r;const {image,...data}=r.data as Record<string,unknown>;return {...r,data:{...data,hasImage:!!image}};});return NextResponse.json({records},{headers:{"Cache-Control":"no-store"}});}
 export async function POST(req:Request){
  if(!sameOrigin(req))return NextResponse.json({error:"허용되지 않은 요청"},{status:403});
  const c=await customerSession();if(!c)return NextResponse.json({error:"로그인 후 저장할 수 있습니다."},{status:401});

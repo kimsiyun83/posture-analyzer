@@ -64,7 +64,7 @@ export default function CareHome() {
           보세요.
         </div>
       )}
-      <main className="care-main">
+      <main className="care-main"><Link className="care-secondary" href="/inbody">인바디 결과지 촬영 · 체성분 리포트 →</Link>
         {tab === "home" && (
           <>
             <section className="care-card score-card">
@@ -318,7 +318,7 @@ export function TestCatalog() {
         <Link href="/">← 홈</Link>
         <b>움직임 검사</b>
       </header>
-      <main className="care-main">
+      <main className="care-main"><Link className="care-secondary" href="/inbody">인바디 결과지 촬영 · 체성분 리포트 →</Link>
         <h1>어떤 검사를 할까요?</h1>
         <p className="muted">처음이라면 전신 자세 분석부터 시작하세요.</p>
         <div className="care-notice">

@@ -54,3 +54,10 @@ export function balanceFeet(points:Point[],left:boolean) {
  const scale=Math.abs((points[23].y+points[24].y-points[11].y-points[12].y)/2);
  return {support:points[left?27:28].y,raised:points[left?28:27].y,scale};
 }
+
+// A confirmed landing already supplies a grounded baseline for the other leg.
+// Do not discard frames during a blind transition delay: an immediate lift would be missed.
+export function rearmOpposite(previous:BalanceState,now:number,feet:{support:number;raised:number;scale:number}|null):BalanceState{
+ const next=freshBalance();if(previous.phase!=="done"||!feet||feet.scale<.04||Math.abs(feet.support-feet.raised)>feet.scale*.18)return next;
+ return {...next,phase:"ready",last:now,floor:feet.support,baseDiff:feet.support-feet.raised};
+}

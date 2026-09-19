@@ -3,7 +3,7 @@ import {Suspense,useEffect,useRef,useState} from "react";
 import {useSearchParams} from "next/navigation";
 import Link from "next/link";
 import {FilesetResolver,PoseLandmarker} from "@mediapipe/tasks-vision";
-import {freshBalance,stepBalance,visible,jointAngle,medianAngle,balanceFeet} from "@/lib/pose/live";
+import {freshBalance,stepBalance,visible,jointAngle,medianAngle,balanceFeet,rearmOpposite} from "@/lib/pose/live";
 import CameraChrome,{useCameraScreen} from "@/components/CameraChrome";
 import FaceTrackingOverlay from "@/components/FaceTrackingOverlay";
 import {drawPose} from "@/lib/pose/live-draw";
@@ -28,7 +28,7 @@ function Live(){
  useEffect(()=>{
   if(!active)return;let cancelled=false,frame=0,stream:MediaStream|null=null,model:PoseLandmarker|null=null,last=0,lastVideo=-1,smooth:number|null=null,maximum:number|null=null,validSince=0;const samples:number[]=[];
   let balance=freshBalance(),measuringSide=selectedSide.current;
-  const pair:{left?:number;right?:number}={};let switchUntil=0,finished=false;
+  const pair:{left?:number;right?:number}={};let finished=false;
   resetBalance.current=false;measured.current=null;
   async function start(){try{
    if(!navigator.mediaDevices?.getUserMedia)throw Error("이 브라우저에서는 카메라를 지원하지 않습니다.");
@@ -46,11 +46,10 @@ function Live(){
      const valid=!document.hidden&&visible(p,indices);const cv=canvas.current!,ctx=cv.getContext("2d")!;cv.width=v.videoWidth;cv.height=v.videoHeight;ctx.clearRect(0,0,cv.width,cv.height);
      drawPose(ctx,p,cv.width,cv.height);
      if(kind==="balance"){
-      if(resetBalance.current){balance=freshBalance();switchUntil=0;resetBalance.current=false;}
-      if(now<switchUntil)return;
+      if(resetBalance.current){balance=freshBalance();resetBalance.current=false;}
       balance=stepBalance(balance,now,valid?balanceFeet(p,left):null);
       setValue(balance.seconds);
-      const labels={prepare:"준비 중 · 양발을 바닥에 두고 움직이지 마세요. ‘준비 완료’ 후 발을 들어 주세요.",ready:`준비 완료 · ${left?"오른발":"왼발"}을 들어 주세요. 자동으로 시작합니다.`,timing:"측정 중 · 든 발을 내리면 자동 종료됩니다.",done:"자동 측정 완료 · 반대쪽 발도 검사해 주세요.",invalid:"관절 추적 또는 지지발 위치가 달라졌습니다. 다시 측정해 주세요."};setMessage(valid?labels[balance.phase]:"인식 대기 · 어깨·골반·양쪽 발목이 모두 보이게 서 주세요.");
+      const labels={prepare:"준비 중 · 양발을 바닥에 두고 움직이지 마세요. ‘준비 완료’ 후 발을 들어 주세요.",ready:`준비 완료 · ${left?"왼발":"오른발"}은 바닥에 두고, ${left?"오른발":"왼발"}을 들어 주세요. 자동으로 시작합니다.`,timing:"측정 중 · 든 발을 내리면 자동 종료됩니다.",done:"자동 측정 완료 · 반대쪽 발도 검사해 주세요.",invalid:"관절 추적 또는 지지발 위치가 달라졌습니다. 다시 측정해 주세요."};setMessage(valid?labels[balance.phase]:"인식 대기 · 어깨·골반·양쪽 발목이 모두 보이게 서 주세요.");
       if(balance.phase==="done"){
        pair[measuringSide]=Math.round(balance.seconds*10)/10;setResults({...pair});
        if(pair.left!==undefined&&pair.right!==undefined){
@@ -59,8 +58,8 @@ function Live(){
        }else{
         const recorded=pair[measuringSide]!;
         measuringSide=measuringSide==="left"?"right":"left";selectedSide.current=measuringSide;setSide(measuringSide);
-        balance=freshBalance();switchUntil=now+2500;setValue(null);
-        setMessage(`${left?"왼쪽":"오른쪽"} 지지발 ${recorded.toFixed(1)}초 기록 완료 · 양발을 내려놓으세요. 다음은 ${measuringSide==="left"?"왼쪽":"오른쪽"} 지지발 검사입니다.`);
+        balance=rearmOpposite(balance,now,valid?balanceFeet(p,!left):null);setValue(null);
+        setMessage(`${left?"왼쪽":"오른쪽"} 지지발 ${recorded.toFixed(1)}초 기록 완료 · 다음은 ${measuringSide==="left"?"왼발로 서고 오른발":"오른발로 서고 왼발"}을 들어 주세요.`);
        }
       }
       else if(balance.phase==="invalid"){setMessage("이번 측정은 저장되지 않았습니다. 양발을 내려놓고 ‘다시 준비’를 누르세요. 선택한 지지발은 바닥에 두세요.");}

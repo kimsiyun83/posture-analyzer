@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, getSessionCookieName } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/customer", "/api/customer/auth", "/api/customer/records"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/customer", "/api/customer/auth", "/api/customer/records", "/inbody", "/api/customer/inbody"];
 const ADMIN_ONLY_PREFIXES = ["/admin", "/api/admin"];
 
 function isPublic(pathname: string): boolean {

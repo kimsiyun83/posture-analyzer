@@ -74,3 +74,9 @@ test('live skeleton never draws occluded or invalid joints and clears previous f
  for(const p of [{x:NaN,y:.4},{x:-.1,y:.4},{x:.5,y:1.1}])assert.equal(draw.drawable(p),false);
  calls.length=0;draw.drawPose(ctx,[],720,960);assert.deepEqual(calls,[['clear',0,0,720,960]]);
 });
+
+test('opposite leg starts immediately after confirmed landing and finishes independently',()=>{
+ let s=ready();for(let t=1300;t<=1800;t+=100)s=live.stepBalance(s,t,feet(.72));for(let t=1900;t<=2100;t+=100)s=live.stepBalance(s,t,feet());assert.equal(s.phase,'done');const first=s.seconds;
+ s=live.rearmOpposite(s,2100,feet());assert.equal(s.phase,'ready');assert.equal(s.seconds,0);for(let t=2200;t<=2700;t+=100)s=live.stepBalance(s,t,feet(.72));assert.equal(s.phase,'timing');for(let t=2800;t<=3000;t+=100)s=live.stepBalance(s,t,feet());assert.equal(s.phase,'done');assert.equal(s.seconds,.6);assert.equal(first,.6);
+ assert.equal(live.rearmOpposite(s,3100,null).phase,'prepare');assert.equal(live.rearmOpposite(s,3100,feet(.5)).phase,'prepare');
+});
