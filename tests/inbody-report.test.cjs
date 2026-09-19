@@ -44,3 +44,16 @@ test('authenticated customer can save a photo-only record without invented metri
  assert.equal(Object.keys(x.calls[0].create.data.values).length,0);
  assert.equal(x.calls[0].create.data.image,data.image);
 });
+
+test('four-field OCR pairs labels and values across separate OCR columns without guessing missing metrics',()=>{
+ const ocr=load('lib/inbody-ocr.ts',{'./inbody-report':ib});
+ const header='level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
+ const word=(text,x,y,confidence=95)=>`5\t1\t1\t1\t1\t1\t${x}\t${y}\t80\t20\t${confidence}\t${text}`;
+ const tsv=[header,word('체중',20,100),word('73.2',300,101),word('골격근량',20,150),word('35.1',300,151),word('체지방량',20,200),word('15.5',300,200),word('체지방률',20,250),word('21.2',300,250)].join('\n');
+ const r=ocr.readInbodyBasics('체중\n골격근량\n체지방량\n체지방률\n73.2\n35.1\n15.5\n21.2',tsv);
+ assert.equal(r.weight.value,73.2);assert.equal(r.muscle.value,35.1);assert.equal(r.fat.value,15.5);
+ // Conflicting text/visual evidence is not guessed.
+ const clean=ocr.readInbodyBasics('',tsv);assert.equal(clean.fatPercent.value,21.2);
+ assert.equal(ocr.readInbodyBasics('인바디점수 80').score,undefined);
+ assert.equal(ocr.visualRows([header,word('99.9',10,10,5)].join('\n')),'');
+});
