@@ -13,7 +13,7 @@ export async function POST(req:Request){
  if(b.data.source==="camera"&&!(await portalSettings()).cameraEnabled)return NextResponse.json({error:"카메라 검사가 중단되었습니다."},{status:403});
  // Store only measurement fields; never arbitrary images, video, or extra payload fields.
  const d=b.data;
- const data=b.kind==="desk"?{source:d.source,startedAt:d.startedAt,endedAt:d.endedAt,totalMs:d.totalMs,validMs:d.validMs,badMs:d.badMs,longestBadMs:d.longestBadMs,averageDelta:d.averageDelta,maxDelta:d.maxDelta,alerts:d.alerts,threshold:d.threshold,holdSeconds:d.holdSeconds,alertMode:d.alertMode,baseline:d.baseline,measurementMode:d.measurementMode??'side'}:b.kind==="posture"?{front:d.front,side:d.side,right:d.right,back:d.back,goal:d.goal,discomfort:d.discomfort}:b.kind==="chair"?{count:d.count,seconds:30,source:d.source}:{left:d.left,right:d.right,source:d.source};
+ const data=b.kind==="desk"?{source:d.source,startedAt:d.startedAt,endedAt:d.endedAt,totalMs:d.totalMs,validMs:d.validMs,badMs:d.badMs,longestBadMs:d.longestBadMs,averageDelta:d.averageDelta,maxDelta:d.maxDelta,alerts:d.alerts,threshold:d.threshold,holdSeconds:d.holdSeconds,alertMode:d.alertMode,baseline:d.baseline,measurementMode:d.measurementMode??'side',alertIntervalSeconds:d.alertIntervalSeconds??30}:b.kind==="posture"?{front:d.front,side:d.side,right:d.right,back:d.back,goal:d.goal,discomfort:d.discomfort}:b.kind==="chair"?{count:d.count,seconds:30,source:d.source}:{left:d.left,right:d.right,source:d.source};
  const record=await prisma.customerRecord.upsert({where:{customerId_clientId:{customerId:c.id,clientId:b.clientId}},create:{customerId:c.id,clientId:b.clientId,kind:b.kind,data:data as Prisma.InputJsonValue},update:{}});
  return NextResponse.json({id:record.id});
 }

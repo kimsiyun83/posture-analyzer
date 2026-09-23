@@ -1,3 +1,16 @@
 .desk-app{max-width:900px}.desk-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.desk-options label{display:grid;gap:8px;font-size:14px}.desk-options select{padding:12px;border:1px solid #cbd9d5;border-radius:12px;background:white;color:#183b32;width:100%}.desk-app summary{font-size:18px;font-weight:700;cursor:pointer}.desk-app ol{padding-left:24px;line-height:1.8}.desk-app li{margin:12px 0}.desk-camera{position:relative;background:#10241f;border-radius:20px;overflow:hidden;margin-top:20px}.desk-camera video{display:block;width:100%;height:auto;min-height:220px}.desk-camera canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.desk-status{position:relative;background:#123e35;color:white;padding:18px;font-size:16px}.desk-status strong{display:block;margin-top:8px;font-size:26px}.desk-status.desk-warning{background:#903d20}.desk-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}.desk-stats>div{padding:15px;border:1px solid #dce6e1;border-radius:12px}.desk-stats dt{font-size:12px;color:#50695e}.desk-stats dd{font-size:20px;font-weight:700;margin:8px 0 0}.desk-buttons{display:flex;flex-wrap:wrap;gap:10px}.desk-buttons button{flex:1;min-width:140px}.desk-time{font-weight:700;font-size:20px}.desk-app button:disabled{opacity:.45}@media(max-width:420px){.desk-options{grid-template-columns:1fr}.desk-stats dd{font-size:17px}}
 
 .desk-video{position:relative}
+/* Video and canvas use identical contain transforms to keep landmarks aligned. */
+.desk-active .care-header,.desk-active .care-main>h1,.desk-active .care-main>p,.desk-active .care-main>details,.desk-active .care-main>fieldset,.desk-active .care-main>button{display:none}
+.desk-active .desk-camera{position:fixed;inset:0;width:100%;height:100dvh;margin:0;border-radius:0;background:#08120f;z-index:10000}
+.desk-active .desk-video{position:absolute;inset:calc(62px + env(safe-area-inset-top)) 0 calc(230px + env(safe-area-inset-bottom))}
+.desk-active .desk-video video,.desk-active .desk-video canvas{position:absolute;inset:0;width:100%;height:100%;min-height:0;object-fit:contain}
+.desk-active .desk-status{position:absolute;left:12px;right:12px;bottom:calc(126px + env(safe-area-inset-bottom));border-radius:16px;padding:12px 16px;font-size:14px;max-height:135px;overflow:auto}
+.desk-active .desk-status strong{font-size:22px;margin-top:4px}
+.desk-active .care-main>.desk-time{display:block;position:fixed;top:env(safe-area-inset-top);left:16px;right:70px;z-index:10001;color:white;font-size:17px}
+.desk-close{position:absolute;right:14px;top:calc(10px + env(safe-area-inset-top));width:44px;height:44px;border:0;border-radius:50%;background:#ffffff25;color:white;font-size:24px;z-index:2}
+.desk-active .desk-buttons{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:10001;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.desk-active .desk-buttons button{min-width:0;padding:12px;font-size:14px;margin:0}
+.desk-active .desk-buttons button:first-child{grid-column:1/-1}
+@media(orientation:landscape) and (max-height:550px){.desk-active .desk-video{inset:50px 300px 10px 0}.desk-active .desk-status{left:auto;width:260px;bottom:140px;right:12px}.desk-active .desk-buttons{left:auto;width:280px}}

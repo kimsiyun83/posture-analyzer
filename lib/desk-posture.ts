@@ -68,12 +68,12 @@ export function stepDesk(s:DeskStats,now:number,delta:number|null,threshold:numb
  r.validMs+=dt;r.sumDeltaMs+=Math.max(0,delta)*dt;r.maxDelta=Math.max(s.maxDelta,delta);
  r.previousBad=bad;r.streakMs=bad?(s.previousBad?s.streakMs:0)+dt:0;
  if(bad)r.badMs+=dt;r.longestBadMs=Math.max(s.longestBadMs,r.streakMs);
- if(bad&&r.streakMs>=holdMs&&now-s.lastAlert>=30000){alert=true;r.lastAlert=now;r.alerts++;}
+ if(bad&&r.streakMs>=holdMs&&now-s.lastAlert>=3000){alert=true;r.lastAlert=now;r.alerts++;}
  return {stats:r,alert};
 }
-export type DeskReport={measurementMode?:'front'|'side';source:'camera';startedAt:string;endedAt:string;totalMs:number;validMs:number;badMs:number;longestBadMs:number;averageDelta:number;maxDelta:number;alerts:number;threshold:number;holdSeconds:number;alertMode:'off'|'beep'|'voice';baseline:number};
+export type DeskReport={measurementMode?:'front'|'side';alertIntervalSeconds?:3|30;source:'camera';startedAt:string;endedAt:string;totalMs:number;validMs:number;badMs:number;longestBadMs:number;averageDelta:number;maxDelta:number;alerts:number;threshold:number;holdSeconds:number;alertMode:'off'|'beep'|'voice';baseline:number};
 export function validDeskReport(d:unknown):d is DeskReport{
  if(!d||typeof d!=='object')return false;const r=d as DeskReport;
  const num=(v:unknown,max:number)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=max;
- return (r.measurementMode===undefined||['front','side'].includes(r.measurementMode))&&r.source==='camera'&&typeof r.startedAt==='string'&&typeof r.endedAt==='string'&&Number.isFinite(Date.parse(r.startedAt))&&Date.parse(r.endedAt)>=Date.parse(r.startedAt)&&num(r.totalMs,86400000)&&num(r.validMs,r.totalMs)&&r.validMs>=10000&&num(r.badMs,r.validMs)&&num(r.longestBadMs,r.badMs)&&num(r.averageDelta,180)&&num(r.maxDelta,180)&&num(r.alerts,10000)&&Number.isInteger(r.alerts)&&[8,12,16].includes(r.threshold)&&[5,8,15].includes(r.holdSeconds)&&['off','beep','voice'].includes(r.alertMode)&&Number.isFinite(r.baseline)&&Math.abs(r.baseline)<=90;
+ return (r.alertIntervalSeconds===undefined||[3,30].includes(r.alertIntervalSeconds))&&(r.measurementMode===undefined||['front','side'].includes(r.measurementMode))&&r.source==='camera'&&typeof r.startedAt==='string'&&typeof r.endedAt==='string'&&Number.isFinite(Date.parse(r.startedAt))&&Date.parse(r.endedAt)>=Date.parse(r.startedAt)&&num(r.totalMs,86400000)&&num(r.validMs,r.totalMs)&&r.validMs>=10000&&num(r.badMs,r.validMs)&&num(r.longestBadMs,r.badMs)&&num(r.averageDelta,180)&&num(r.maxDelta,180)&&num(r.alerts,10000)&&Number.isInteger(r.alerts)&&[8,12,16].includes(r.threshold)&&[5,8,15].includes(r.holdSeconds)&&['off','beep','voice'].includes(r.alertMode)&&Number.isFinite(r.baseline)&&Math.abs(r.baseline)<=90;
 }
