@@ -1,12 +1,36 @@
 export type Point={x:number;y:number;visibility?:number};
+export type DeskSide='left'|'right';
+export const reliablePoint=(q:Point|undefined)=>!!q&&Number.isFinite(q.x)&&Number.isFinite(q.y)&&(q.visibility??0)>=.6&&q.x>.02&&q.x<.98&&q.y>.02&&q.y<.98;
 export function neckReading(p:Point[],width:number,height:number,side:'left'|'right'){
  const e=p[side==='left'?7:8],s=p[side==='left'?11:12],n=p[0],other=p[side==='left'?12:11];
- const visible=(q:Point|undefined)=>q&&Number.isFinite(q.x)&&Number.isFinite(q.y)&&(q.visibility??0)>=.7&&q.x>.02&&q.x<.98&&q.y>.02&&q.y<.98;
+ const visible=reliablePoint;
  if(!visible(e)||!visible(s)||!visible(n)||width<=0||height<=0)return null;
  const dx=(e.x-s.x)*width,dy=(s.y-e.y)*height,size=Math.hypot(dx,dy),facing=(n.x-e.x)*width;
  if(dy<25||size<45||Math.abs(facing)<size*.08)return null;
  if(visible(other)&&Math.abs(other.x-s.x)*width>size*.85)return null;
  return {angle:Math.atan2(Math.sign(facing)*dx,dy)*180/Math.PI,size,direction:Math.sign(facing)};
+}
+export function inspectNeck(p:Point[],width:number,height:number,side:DeskSide|'auto'){
+ const candidates:DeskSide[]=side==='auto'?['left','right']:[side];
+ const ranked=candidates.map(selected=>{
+  const points=[p[0],p[selected==='left'?7:8],p[selected==='left'?11:12]];
+  const reading=neckReading(p,width,height,selected);
+  return {side:selected,points,reading,quality:Math.min(...points.map(q=>q?.visibility??0))};
+ }).sort((a,b)=>Number(!!b.reading)-Number(!!a.reading)||b.quality-a.quality);
+ const best=ranked[0];const labels=['코','귀','어깨'];
+ const missing=labels.filter((_,i)=>!reliablePoint(best.points[i]));
+ return {...best,message:!p.length?'상체가 보이도록 앉아 주세요.':missing.length?`${missing.join('·')} 인식이 약합니다. 가림을 없애고 조명과 카메라 위치를 조절하세요.`:!best.reading?'몸의 옆모습이 보이도록 카메라를 옮기고 귀부터 어깨까지 화면에 담아 주세요.':''};
+}
+export type NeckSample={angle:number;size:number;direction:number;time:number};
+export function stableNeck(samples:NeckSample[],reading:NeckSample){
+ // Brief dropouts do not discard the entire calibration. Long gaps reset it.
+ let next=samples.length&&reading.time-samples[samples.length-1].time>800?[]:samples;
+ next=[...next,reading].filter(s=>reading.time-s.time<=6000);
+ const median=(values:number[])=>{const a=[...values].sort((a,b)=>a-b);return a[Math.floor(a.length/2)];};
+ const angle=median(next.map(s=>s.angle)),size=median(next.map(s=>s.size));
+ const stable=next.filter(s=>s.direction===reading.direction&&Math.abs(s.angle-angle)<=4&&Math.abs(s.size/size-1)<=.15);
+ const ready=next.length>=24&&reading.time-next[0].time>=5000&&stable.length/next.length>=.85&&Math.abs(reading.angle-angle)<=4;
+ return {samples:next,ready,angle,size,direction:reading.direction};
 }
 export type DeskStats={totalMs:number;validMs:number;badMs:number;longestBadMs:number;sumDeltaMs:number;maxDelta:number;alerts:number;streakMs:number;last:number;previousBad:boolean;lastAlert:number};
 export const freshDesk=(now:number):DeskStats=>({totalMs:0,validMs:0,badMs:0,longestBadMs:0,sumDeltaMs:0,maxDelta:0,alerts:0,streakMs:0,last:now,previousBad:false,lastAlert:-Infinity});

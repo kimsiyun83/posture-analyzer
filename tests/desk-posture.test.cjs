@@ -15,3 +15,18 @@ test('customer API stores desk summary fields only and derives owner from sessio
  const response=await module.exports.POST(new Request('https://test/api/customer/records',{method:'POST',body:JSON.stringify({kind:'desk',clientId:'desk-record-12345',data})}));
  assert.equal(response.status,200);assert.equal(saved.create.customerId,'owner');assert.equal(saved.create.data.validMs,50000);assert.equal(saved.create.data.image,undefined);assert.equal(saved.create.data.left,undefined);
 });
+
+test('automatic side picks visible right landmarks; missing nose is explained, never fabricated',()=>{
+ const p=Array.from({length:33},()=>({x:.5,y:.5,visibility:0}));
+ p[8]={x:.5,y:.3,visibility:.9};p[12]={x:.55,y:.6,visibility:.85};p[0]={x:.4,y:.28,visibility:.9};
+ const result=m.exports.inspectNeck(p,1000,500,'auto');assert.equal(result.side,'right');assert.ok(result.reading);
+ assert.equal(m.exports.inspectNeck(p,1000,500,'left').reading,null);
+ p[0].visibility=.2;const missing=m.exports.inspectNeck(p,1000,500,'right');assert.equal(missing.reading,null);assert.match(missing.message,/코/);
+ p[0].visibility=.65;assert.ok(m.exports.inspectNeck(p,1000,500,'right').reading);
+});
+test('calibration tolerates one short dropout and jitter, but rejects motion and resets after long gaps',()=>{
+ let samples=[],r;for(let t=0;t<=5200;t+=200){if(t===2000)continue;r=m.exports.stableNeck(samples,{angle:15+(t%600===0?3:-1),size:150,direction:1,time:t});samples=r.samples;}
+ assert.equal(r.ready,true);assert.ok(Math.abs(r.angle-15)<=3);
+ r=m.exports.stableNeck(samples,{angle:15,size:150,direction:1,time:7000});assert.equal(r.ready,false);assert.equal(r.samples.length,1);
+ samples=[];for(let t=0;t<=5200;t+=200){r=m.exports.stableNeck(samples,{angle:t/200,size:150,direction:1,time:t});samples=r.samples;}assert.equal(r.ready,false);
+});
