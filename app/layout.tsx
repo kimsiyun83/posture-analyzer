@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./care-design.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "체형·자세 스크리닝",
-  description: "트레이너를 위한 사진 기반 자세 분석 도구",
+  title: "LULU CARE | 내 몸을 위한 작은 체크",
+  description: "자세 검사, 업무 자세 알림, 인바디 변화 기록을 한곳에서 확인하세요.",
 };
 
 export default function RootLayout({
@@ -31,3 +32,4 @@ export default function RootLayout({
     </html>
   );
 }
+

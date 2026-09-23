@@ -169,19 +169,19 @@ function Assessment() {
       <main className={stage === "results" ? "assessment-report" : "care-main"}>
         {stage === "prepare" && (
           <>
-            <span className="eyebrow">MY BODY CHECK</span>
+            <span className="eyebrow">사진 4장으로 확인하는 내 몸</span>
             <h1>
-              내 몸을 알아보는
+              전신 자세,
               <br />
-              가장 쉬운 시작
+              한 방향씩 천천히.
             </h1>
             <p className="muted">
-              강습 선택은 검사 후에 해요.
+              준비 → 4방향 촬영 → 결과 확인 순서로 진행해요.
               <br />
               먼저 네 방향에서 편안한 자세를 기록해 주세요.
             </p>
             <section className="care-card">
-              <h2>촬영 전 확인해 주세요</h2>
+              <h2>1. 촬영 공간을 준비해요</h2>
               <ol className="prep-list">
                 <li>밝은 공간에서 머리부터 발끝까지 나오게 해주세요.</li>
                 <li>몸의 라인이 보이는 편안한 옷을 입고 신발을 벗어주세요.</li>
@@ -190,7 +190,7 @@ function Assessment() {
               </ol>
             </section>
             <section className="care-card">
-              <h2>촬영은 총 4단계로 진행돼요</h2>
+              <h2>2. 안내에 따라 네 방향을 찍어요</h2>
               <div className="direction-steps">
                 {DIRECTIONS.map((d, i) => (
                   <span key={d}>
@@ -204,7 +204,7 @@ function Assessment() {
               </button>
             </section>
             <section className="care-card">
-              <h2>어떤 변화를 원하시나요?</h2>
+              <h2>3. 관심 있는 목표를 골라요</h2>
               <p className="muted">검사 후 상담 방향을 정할 때 참고해요.</p>
               <div className="goal-options">
                 {(
@@ -249,10 +249,10 @@ function Assessment() {
               disabled={!consent}
               onClick={() => setStage("capture")}
             >
-              체형 분석 시작하기
+              준비 완료 · 촬영 시작 →
             </button>
             <Link className="demo-link" href="/analyze/demo">
-              데모 리포트 보기 →
+              촬영 전 결과 예시 보기 →
             </Link>
           </>
         )}
@@ -546,3 +546,4 @@ function Assessment() {
     </div>
   );
 }
+
