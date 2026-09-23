@@ -1,0 +1,48 @@
+plugins { id 'com.android.application' }
+
+def signingValues = [
+    store: System.getenv('LULU_KEYSTORE'),
+    storePass: System.getenv('LULU_STORE_PASSWORD'),
+    alias: System.getenv('LULU_KEY_ALIAS'),
+    keyPass: System.getenv('LULU_KEY_PASSWORD')
+]
+def hasSigning = signingValues.values().every { it != null && !it.isEmpty() }
+if (signingValues.values().any { it != null } && !hasSigning) {
+    throw new GradleException('All four LULU signing environment variables are required.')
+}
+android {
+    namespace 'com.lulucare.posture'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'com.lulucare.posture'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        if (hasSigning) {
+            release {
+                storeFile file(signingValues.store)
+                storePassword signingValues.storePass
+                keyAlias signingValues.alias
+                keyPassword signingValues.keyPass
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasSigning) signingConfig signingConfigs.release
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.3'
+}

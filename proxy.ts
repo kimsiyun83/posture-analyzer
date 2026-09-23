@@ -5,6 +5,7 @@ const PUBLIC_PATHS = ["/login", "/api/auth/login", "/customer", "/api/customer/a
 const ADMIN_ONLY_PREFIXES = ["/admin", "/api/admin"];
 
 function isPublic(pathname: string): boolean {
+  if (["/.well-known/assetlinks.json", "/install", "/manifest.webmanifest", "/sw.js", "/offline.html", "/app-icons/icon-192.png", "/app-icons/icon-512.png", "/app-icons/apple-touch-icon.png"].includes(pathname)) return true;
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (["/illustrations/guide-character.webp", "/illustrations/capture-directions.webp"].includes(pathname)) return true;
   // Posture analyzer + landing page stay public — the client-facing screening
