@@ -2,12 +2,17 @@ export type Point={x:number;y:number;visibility?:number};
 export type DeskSide='left'|'right';
 export const reliablePoint=(q:Point|undefined)=>!!q&&Number.isFinite(q.x)&&Number.isFinite(q.y)&&(q.visibility??0)>=.6&&q.x>.02&&q.x<.98&&q.y>.02&&q.y<.98;
 export function neckReading(p:Point[],width:number,height:number,side:'left'|'right'){
- const e=p[side==='left'?7:8],s=p[side==='left'?11:12],n=p[0],other=p[side==='left'?12:11];
+ const e=p[side==='left'?7:8],s=p[side==='left'?11:12],n=p[0],otherEar=p[side==='left'?8:7];
  const visible=reliablePoint;
  if(!visible(e)||!visible(s)||!visible(n)||width<=0||height<=0)return null;
  const dx=(e.x-s.x)*width,dy=(s.y-e.y)*height,size=Math.hypot(dx,dy),facing=(n.x-e.x)*width;
  if(dy<25||size<45||Math.abs(facing)<size*.08)return null;
- if(visible(other)&&Math.abs(other.x-s.x)*width>size*.85)return null;
+ // Shoulder width varies with seated rotation and arm placement; it cannot
+ // determine whether the face is side-on. Reject a centered, frontal face instead.
+ if(visible(otherEar)){
+  const a=(n.x-e.x)*width,b=(n.x-otherEar.x)*width;
+  if(a*b<0&&Math.min(Math.abs(a),Math.abs(b))/Math.max(Math.abs(a),Math.abs(b))>.65)return null;
+ }
  return {angle:Math.atan2(Math.sign(facing)*dx,dy)*180/Math.PI,size,direction:Math.sign(facing)};
 }
 export function inspectNeck(p:Point[],width:number,height:number,side:DeskSide|'auto'){
@@ -29,7 +34,7 @@ export function stableNeck(samples:NeckSample[],reading:NeckSample){
  const median=(values:number[])=>{const a=[...values].sort((a,b)=>a-b);return a[Math.floor(a.length/2)];};
  const angle=median(next.map(s=>s.angle)),size=median(next.map(s=>s.size));
  const stable=next.filter(s=>s.direction===reading.direction&&Math.abs(s.angle-angle)<=4&&Math.abs(s.size/size-1)<=.15);
- const ready=next.length>=24&&reading.time-next[0].time>=5000&&stable.length/next.length>=.85&&Math.abs(reading.angle-angle)<=4;
+ const ready=next.length>=10&&reading.time-next[0].time>=5000&&stable.length/next.length>=.85&&Math.abs(reading.angle-angle)<=4;
  return {samples:next,ready,angle,size,direction:reading.direction};
 }
 export type DeskStats={totalMs:number;validMs:number;badMs:number;longestBadMs:number;sumDeltaMs:number;maxDelta:number;alerts:number;streakMs:number;last:number;previousBad:boolean;lastAlert:number};
