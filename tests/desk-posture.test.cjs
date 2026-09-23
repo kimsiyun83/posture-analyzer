@@ -11,9 +11,9 @@ test('customer API stores desk summary fields only and derives owner from sessio
  '@/lib/customer':{customerSession:async()=>({id:'owner'}),sameOrigin:()=>true,portalSettings:async()=>({cameraEnabled:true})},
  '@/lib/customer-record':{validCustomerRecord:(kind,data)=>kind==='desk'&&validDeskReport(data)}
  };vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/api/customer/records/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module,exports:module.exports,require:n=>mock[n],Response,URL});
- const data={source:'camera',startedAt:'2026-09-23T01:00:00Z',endedAt:'2026-09-23T01:01:00Z',totalMs:60000,validMs:50000,badMs:10000,longestBadMs:8000,averageDelta:3,maxDelta:20,alerts:1,threshold:12,holdSeconds:8,alertMode:'beep',baseline:15,image:'must-not-save'};
+ const data={source:'camera',startedAt:'2026-09-23T01:00:00Z',endedAt:'2026-09-23T01:01:00Z',totalMs:60000,validMs:50000,badMs:10000,longestBadMs:8000,averageDelta:3,maxDelta:20,alerts:1,threshold:12,holdSeconds:8,alertMode:'beep',baseline:15,measurementMode:'front',image:'must-not-save'};
  const response=await module.exports.POST(new Request('https://test/api/customer/records',{method:'POST',body:JSON.stringify({kind:'desk',clientId:'desk-record-12345',data})}));
- assert.equal(response.status,200);assert.equal(saved.create.customerId,'owner');assert.equal(saved.create.data.validMs,50000);assert.equal(saved.create.data.image,undefined);assert.equal(saved.create.data.left,undefined);
+ assert.equal(response.status,200);assert.equal(saved.create.customerId,'owner');assert.equal(saved.create.data.validMs,50000);assert.equal(saved.create.data.image,undefined);assert.equal(saved.create.data.measurementMode,'front');assert.equal(saved.create.data.left,undefined);
 });
 
 test('automatic side picks visible right landmarks; missing nose is explained, never fabricated',()=>{
@@ -38,4 +38,25 @@ test('three-quarter seated view with separated shoulders is accepted in both dir
  for(const flip of [false,true]){const p=Array.from({length:33},()=>({x:.5,y:.5,visibility:0}));const x=v=>flip?1-v:v;
  p[7]={x:x(.60),y:.34,visibility:.9};p[11]={x:x(.36),y:.62,visibility:.95};p[0]={x:x(.78),y:.40,visibility:.95};p[12]={x:x(.90),y:.58,visibility:.9};
  const r=neckReading(p,960,720,'left');assert.ok(r);assert.ok(r.angle>0);}
+});
+test('front view detects downward change, excludes missing shoulders and head turns, and normalizes camera scale',()=>{
+ const p=Array.from({length:33},()=>({x:.5,y:.5,visibility:0}));
+ p[0]={x:.5,y:.32,visibility:1};p[2]={x:.44,y:.25,visibility:1};p[5]={x:.56,y:.25,visibility:1};p[11]={x:.25,y:.65,visibility:1};p[12]={x:.75,y:.65,visibility:1};
+ const read=q=>m.exports.inspectFront(q,960,720);const base=read(p);assert.ok(base.reading);
+ const slumped=p.map(q=>({...q}));slumped[0].y+=.05;assert.ok(read(slumped).reading.angle-base.reading.angle>12);
+ const scaled=p.map(q=>({...q,x:.5+(q.x-.5)*.8,y:.5+(q.y-.5)*.8}));assert.ok(Math.abs(read(scaled).reading.angle-base.reading.angle)<.0001);
+ p[11].visibility=0;assert.equal(read(p).reading,null);assert.match(read(p).message,/왼어깨/);
+ p[11].visibility=1;p[0].x=.65;assert.equal(read(p).reading,null);
+});
+test('landmark filter rejects an abrupt shoulder jump and does not carry invisible points forward',()=>{
+ const old=[{x:.4,y:.5,visibility:1}];const next=m.exports.smoothDeskPoints(old,[{x:.42,y:.5,visibility:1}]);assert.ok(Math.abs(next[0].x-.41)<1e-10);
+ const jump=m.exports.smoothDeskPoints(old,[{x:.8,y:.5,visibility:1}]);assert.equal(jump[0].visibility,0);
+ const recovered=m.exports.smoothDeskPoints(jump,[{x:.8,y:.5,visibility:1}]);assert.equal(recovered[0].visibility,1);
+ assert.equal(m.exports.smoothDeskPoints(old,[{x:.4,y:.5,visibility:0}])[0].visibility,0);
+});
+test('side selection prefers nearer reliable landmarks instead of the hidden side',()=>{
+ const p=Array.from({length:33},()=>({x:.5,y:.5,visibility:0}));p[0]={x:.7,y:.3,visibility:.95};
+ p[7]={x:.5,y:.3,visibility:.9,z:-.3};p[11]={x:.45,y:.6,visibility:.9,z:-.3};
+ p[8]={x:.55,y:.3,visibility:.95,z:.2};p[12]={x:.48,y:.6,visibility:.95,z:.2};
+ assert.equal(m.exports.inspectNeck(p,960,720,'auto').side,'left');
 });
