@@ -449,6 +449,7 @@ model Customer {
   consentAt DateTime @default(now())
   createdAt DateTime @default(now())
   records CustomerRecord[]
+  @@index([createdAt])
 }
 model CustomerRecord {
   id String @id @default(cuid())
@@ -460,6 +461,7 @@ model CustomerRecord {
   createdAt DateTime @default(now())
   @@unique([customerId, clientId])
   @@index([customerId, createdAt])
+  @@index([createdAt])
 }
 model PortalSettings {
   id String @id @default("main")
@@ -471,4 +473,18 @@ model PortalRateLimit {
   key String @id
   count Int
   resetAt DateTime
+}
+
+model TrafficVisit {
+  id String @id
+  day String
+  visitorHash String
+  pageViews Int @default(1)
+  createdAt DateTime @default(now())
+  lastSeen DateTime @default(now())
+  @@index([day, visitorHash])
+}
+model TrafficCollection {
+  id String @id @default("main")
+  startedAt DateTime @default(now())
 }

@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import VisitTracker from './VisitTracker';
+
 type InstallEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -58,7 +60,7 @@ export default function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  return <AppContext.Provider value={{ installed, available, busy, message, install }}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{ installed, available, busy, message, install }}><VisitTracker />{children}</AppContext.Provider>;
 }
 
 export function AppInstallButton() {

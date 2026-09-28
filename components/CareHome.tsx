@@ -23,7 +23,7 @@ export default function CareHome(){
  <section className="care-card"><h2>홈 화면에서 바로 만나요</h2><p>LULU CARE를 설치하면 아이콘을 눌러 바로 시작할 수 있어요.</p><Link href="/install" className="care-secondary">앱 설치하기 →</Link></section>
  <section className="ux-how"><h2>사용은 이렇게 간단해요</h2><ol><li><b>01</b><div><strong>골라요</strong><p>확인하고 싶은 검사를 선택해요.</p></div></li><li><b>02</b><div><strong>따라 해요</strong><p>준비 안내와 촬영 예시를 확인해요.</p></div></li><li><b>03</b><div><strong>기록해요</strong><p>결과를 보고, 로그인해 저장해요.</p></div></li></ol></section>
  <section className="care-card ux-recent"><div className="ux-section-head"><h2>지난 기록 이어보기</h2><Link href="/customer">전체 기록 →</Link></div>{loading?<p role="status">기록을 확인하고 있어요…</p>:latest?<><p>{new Date(latest.date).toLocaleDateString('ko-KR')} · 최근 전신 자세 검사</p><button className="care-secondary" onClick={()=>{setSelected(latest);setTab('reports');window.scrollTo(0,0);}}>최근 검사 결과 보기</button><button className="text-link" onClick={()=>{setSelected(null);setTab('reports');window.scrollTo(0,0);}}>체형 리포트 모아보기</button></>:<><p>{recordMessage||'아직 저장한 전신 자세 기록이 없어요. 첫 검사부터 차근차근 시작해 보세요.'}</p><Link href="/customer" className="ux-quiet">로그인 · 내 기록 확인 →</Link></>}</section>
- <p className="bottom-note">LULU CARE는 일상 속 몸의 변화를 살펴보는 참고 도구입니다.<br/>통증이나 불편감은 전문가와 상담해 주세요.</p>
+ <p className="bottom-note">LULU CARE는 일상 속 몸의 변화를 살펴보는 참고 도구입니다.<br/>통증이나 불편감은 전문가와 상담해 주세요.<br/><a href="/traffic-info">접속 통계 안내</a></p>
  </>}
         {tab === "reports" && (
           <>
