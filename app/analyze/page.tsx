@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CustomerSave } from "@/components/CustomerAccess";
 import { useSearchParams } from "next/navigation";
 import CameraCapture from "@/components/CameraCapture";
-import PostureCanvas from "@/components/PostureCanvas";
+import MeasurementPhoto from "@/components/MeasurementPhoto";
 import DetailedPostureReport from "@/components/DetailedPostureReport";
 import { getPoseLandmarker } from "@/lib/pose/model";
 import {
@@ -323,11 +323,7 @@ function Assessment() {
             )}
             {stage === "review" && pending && (
               <>
-                <img
-                  className="capture-preview"
-                  src={pending.dataUrl}
-                  alt={`${DIRECTIONS[index]} 촬영 확인`}
-                />
+                <MeasurementPhoto src={pending.dataUrl} landmarks={pending.landmarks} alt={`${DIRECTIONS[index]} 촬영 확인`}/>
                 <p>사진의 방향과 전신이 올바르게 보이는지 확인해 주세요.</p>
                 <button className="care-primary" onClick={next}>
                   {index === 3 ? "내 몸의 평가 보기" : "확인하고 다음 촬영"}
@@ -350,16 +346,7 @@ function Assessment() {
             <div className="report-photo-grid">
               {shots.map((shot, i) => (
                 <figure key={i}>
-                  {i === 2 ? (
-                    <img src={shot.dataUrl} alt="후면 촬영 사진" />
-                  ) : (
-                    <PostureCanvas
-                      imageSrc={shot.dataUrl}
-                      landmarks={shot.landmarks}
-                      view={i === 0 ? "front" : "side"}
-                      facing={shot.side?.facing}
-                    />
-                  )}
+                  <MeasurementPhoto src={shot.dataUrl} landmarks={shot.landmarks} alt={`${DIRECTIONS[i]} 분석 사진`}/>
                   <figcaption>{DIRECTIONS[i]}</figcaption>
                 </figure>
               ))}

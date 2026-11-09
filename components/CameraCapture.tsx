@@ -6,6 +6,7 @@ import {FilesetResolver,PoseLandmarker} from "@mediapipe/tasks-vision";
 import {drawPose} from "@/lib/pose/live-draw";
 import FaceTrackingOverlay from "./FaceTrackingOverlay";
 import CameraChrome,{useCameraScreen} from "./CameraChrome";
+import {GuideControls,MeasurementGuides,useMeasurementGuides} from "./MeasurementGuides";
 
 interface CameraCaptureProps {
   active?: boolean;
@@ -20,6 +21,7 @@ interface CameraCaptureProps {
 
 export default function CameraCapture({ view, onCapture, captureError, active=true, step=0, onClose }: CameraCaptureProps) {
   useCameraScreen(active);
+  const [guides,setGuides]=useMeasurementGuides();
   const poseCanvas=useRef<HTMLCanvasElement>(null);
   const [tracking,setTracking]=useState("전신 추적 준비 중…");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,13 +95,14 @@ export default function CameraCapture({ view, onCapture, captureError, active=tr
       }
     }
 
-    start();
+    if(active) void start();
+    else stopStream();
     return () => {
       cancelled = true;
       stopStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facing]);
+  }, [facing,active]);
 
   useEffect(() => {
     return () => {
@@ -171,13 +174,15 @@ export default function CameraCapture({ view, onCapture, captureError, active=tr
   return <div className="camera-screen" role="region" aria-label="전체화면 체형 촬영">
     <div className="camera-viewport">
       <video ref={videoRef} playsInline muted style={{objectFit:fillFrame?"cover":"contain",transform:mirror?"scaleX(-1)":"none"}}/>
-      <canvas ref={poseCanvas} aria-hidden="true" style={{objectFit:fillFrame?"cover":"contain",transform:mirror?"scaleX(-1)":"none"}}/>
-      {ready&&active&&view!=="back"&&<FaceTrackingOverlay video={videoRef} active={active} mirror={mirror} fillFrame={fillFrame}/>}
+      <canvas ref={poseCanvas} aria-hidden="true" style={{objectFit:fillFrame?"cover":"contain",transform:mirror?"scaleX(-1)":"none",visibility:guides.skeleton?"visible":"hidden"}}/>
+      <MeasurementGuides settings={guides} onChange={setGuides}/>
+      {ready&&active&&guides.skeleton&&view!=="back"&&<FaceTrackingOverlay video={videoRef} active={active} mirror={mirror} fillFrame={fillFrame}/>}
       <CameraChrome title={`${step+1}/4 · ${["정면","오른쪽 측면","후면","왼쪽 측면"][step]}`} progress={step/4} onClose={()=>{handleCancelCountdown();onClose?.();}}/>
       {countdown!==null&&<div className="camera-countdown" role="status">{countdown}</div>}
       <div className="camera-instruction" role={error||captureError?"alert":"status"}>{error||captureError||tracking}<small>{view==="front"?"앞모습을 촬영해 주세요.":view==="back"?"등을 카메라 쪽으로 보여 주세요.":"옆모습의 귀·어깨·골반·발목이 보이게 서 주세요."}</small></div>
     </div>
     <div className="camera-controls">
+      <GuideControls settings={guides} onChange={setGuides}/>
       <div className="camera-options"><button onClick={()=>setMirror(v=>!v)} aria-pressed={mirror}>거울 {mirror?"ON":"OFF"}</button><button onClick={()=>setFillFrame(v=>!v)}>{fillFrame?"전체 영상 보기":"화면 채우기"}</button><label>사진 선택<input type="file" accept="image/jpeg,image/png,image/webp" disabled={countdown!==null} onChange={e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>15*1024*1024){setError("15MB 이하 사진을 선택해 주세요.");return;}const reader=new FileReader();reader.onload=()=>onCapture(String(reader.result),0,0);reader.onerror=()=>setError("사진을 읽지 못했습니다.");reader.readAsDataURL(f);}}/></label></div>
       <div className="camera-actions"><button disabled={countdown!==null} onClick={()=>setDelay(d=>d===0?3:d===3?5:0)} aria-label="타이머 변경">◷<small>{delay?`${delay}초`:"OFF"}</small></button><button className="camera-shutter" disabled={!ready} onClick={countdown!==null?handleCancelCountdown:handleCaptureClick} aria-label={countdown!==null?"촬영 취소":"촬영하기"}>{countdown!==null?"취소":""}</button><button onClick={handleSwitchCamera} disabled={countdown!==null||!ready||devices.length<2} aria-label="카메라 전환">↻<small>카메라</small></button></div>
     </div>
